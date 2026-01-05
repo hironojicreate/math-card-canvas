@@ -1304,6 +1304,7 @@ if (container.classList.contains('container-fraction')) {
     },
 
 
+
     startDrag(e, element, cardInstance) {
         this.commitInput(); 
 
@@ -1314,7 +1315,7 @@ if (container.classList.contains('container-fraction')) {
         state.cardInstance = cardInstance;
         state.originalParent = element.parentElement; 
 
-        // ★追加：元の座標をメモしておく！（これでズレを防ぐ）
+        // ★追加：元の座標をメモしておく！
         state.originalLeft = element.style.left;
         state.originalTop = element.style.top;
 
@@ -1323,9 +1324,14 @@ if (container.classList.contains('container-fraction')) {
         const originalW = element.offsetWidth;
         const originalH = element.offsetHeight;
 
-        // 2. マウスとカード左上のズレを計算
-        state.offsetX = e.clientX - rect.left;
-        state.offsetY = e.clientY - rect.top;
+        // ====== ★ここが修正ポイント！ ======
+        // マウス(e)かタッチ(e)かを自動判定して、正しい座標をもらう
+        const pos = this.getEventPos(e); 
+
+        // e.clientX ではなく pos.x を使う！
+        state.offsetX = pos.x - rect.left;
+        state.offsetY = pos.y - rect.top;
+        // =================================
 
         this.createDropZones(element);
 
@@ -1344,7 +1350,7 @@ if (container.classList.contains('container-fraction')) {
         
         element.style.position = 'absolute';
         element.style.margin = '0';
-        element.style.zIndex = '9999'; // 最前面へ！
+        element.style.zIndex = '9999'; 
 
         // 座標セット
         const diffX = (rect.width - originalW) / 2;
@@ -1356,17 +1362,19 @@ if (container.classList.contains('container-fraction')) {
         element.classList.add('dragging');
     },
 
+
     updateDragPosition(e) {
         const { target, offsetX, offsetY } = this.dragState;
         this.dragState.hasMoved = true;
 
-        // ★★★ 修正ポイント：body基準なので計算が単純化 ★★★
-        const newLeft = e.clientX - offsetX;
-        const newTop = e.clientY - offsetY;
+        // ====== ★ここが修正ポイント！ ======
+        // ここでも翻訳機を通すの！
+        const pos = this.getEventPos(e);
 
-        // ※画面外にはみ出さない制限をかけるならここだけど、
-        // 待機エリアに行きたいので、あえて制限を緩めるか、なくしてもOK。
-        // 今回はシンプルに制限なしでいくわ！
+        // e.clientX ではなく pos.x を使う
+        const newLeft = pos.x - offsetX;
+        const newTop = pos.y - offsetY;
+        // =================================
         
         target.style.left = `${newLeft}px`;
         target.style.top = `${newTop}px`;
