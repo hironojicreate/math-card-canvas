@@ -143,7 +143,8 @@ createDOM() {
 
  // ====== script.js : MathCard クラスの addDragSupport メソッド内 ======
 
-    addDragSupport() {
+
+ addDragSupport() {
         const el = this.element;
         
         // --- A. ホバー時のスマート選択ロジック (変更なし) ---
@@ -159,10 +160,13 @@ createDOM() {
             el.classList.remove('hover-active');
         });
 
-        // --- B. ドラッグ開始 兼 クリックフォーカス判定 ---
-        el.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
-            e.preventDefault();
+        // --- B. ドラッグ開始 兼 クリックフォーカス判定 (マウス＆タッチ両対応) ---
+
+        // ★共通の開始処理関数を作ったの！
+        const handleStart = (e) => {
+            // マウスの右クリックなどは無視
+            if (e.type === 'mousedown' && e.button !== 0) return;
+
             e.stopPropagation();
 
             // ====== ダブルクリック判定 (変更なし) ======
@@ -184,7 +188,7 @@ createDOM() {
             this.lastClickTime = currentTime;
             // ============================================
 
-            // ====== ★Phase 2: 詳細な初期フォーカスロジック ======
+            // ====== 詳細な初期フォーカスロジック ======
             
             // コンテナ系のカードかどうか判定
             if (this.type === 'root' || this.value === '分数' || 
@@ -204,8 +208,27 @@ createDOM() {
             // ====================================================
 
             App.commitInput();
+            
+            // ★修正: タッチイベント(e)もそのまま渡す（App側で座標計算する前提）
             App.startDrag(e, el, this);
+        };
+
+        // 1. マウス用リスナー
+        el.addEventListener('mousedown', (e) => {
+            e.preventDefault(); // テキスト選択などを防ぐ
+            handleStart(e);
         });
+
+        // 2. ★追加：タッチ用リスナー（iPad対応）
+        el.addEventListener('touchstart', (e) => {
+            // 2本指以上の操作は無視
+            if (e.touches && e.touches.length > 1) return;
+            
+            // 画面スクロールを防ぐ（カードを掴むため）
+            if (e.cancelable) e.preventDefault();
+            
+            handleStart(e);
+        }, { passive: false }); // ←重要！これが無いと preventDefault できないブラウザがあるの
     }
 }
 
@@ -282,6 +305,23 @@ const App = {
         activeZone: null,     
         ghostSpacer: null,
         hasMoved: false
+    },
+
+    // ★追加：マウスでもタッチでも、正しい座標(X,Y)を返す関数
+    getEventPos(e) {
+        if (e.type.includes('touch')) {
+            // タッチイベントの場合
+            return {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
+        } else {
+            // マウスイベントの場合
+            return {
+                x: e.clientX,
+                y: e.clientY
+            };
+        }
     },
 
     init() {
@@ -1834,7 +1874,28 @@ document.addEventListener('DOMContentLoaded', () => {
             scrollTop = scrollContainer.scrollTop;
         });
 
+        // タッチ開始
+        scrollContainer.addEventListener('touchstart', (e) => {
+            if (e.target.closest('.math-card') || e.target.closest('button') || e.target.closest('.resize-handle')) {
+                return; 
+            }
+            isDown = true;
+            scrollContainer.classList.add('is-dragging');
+            
+            // タッチ座標取得
+            startX = e.touches[0].pageX - scrollContainer.offsetLeft;
+            startY = e.touches[0].pageY - scrollContainer.offsetTop;
+            scrollLeft = scrollContainer.scrollLeft;
+            scrollTop = scrollContainer.scrollTop;
+        });
+
         scrollContainer.addEventListener('mouseleave', () => {
+            isDown = false;
+            scrollContainer.classList.remove('is-dragging');
+        });
+
+        // タッチ終了
+        scrollContainer.addEventListener('touchend', () => {
             isDown = false;
             scrollContainer.classList.remove('is-dragging');
         });
@@ -1858,6 +1919,23 @@ document.addEventListener('DOMContentLoaded', () => {
             scrollContainer.scrollLeft = scrollLeft - walkX;
             scrollContainer.scrollTop = scrollTop - walkY;
         });
+
+        // タッチ移動
+        scrollContainer.addEventListener('touchmove', (e) => {
+            if (!isDown) return;
+            if(e.cancelable) e.preventDefault(); // スクロール防止
+
+            const x = e.touches[0].pageX - scrollContainer.offsetLeft;
+            const y = e.touches[0].pageY - scrollContainer.offsetTop;
+            
+            const walkX = (x - startX) * 1.5;
+            const walkY = (y - startY) * 1.5;
+            
+            scrollContainer.scrollLeft = scrollLeft - walkX;
+            scrollContainer.scrollTop = scrollTop - walkY;
+        }, { passive: false });
+
+
     }
 });
 // ====== フィールドのドラッグスクロール機能ブロック (終了) ======
