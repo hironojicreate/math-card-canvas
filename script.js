@@ -328,6 +328,11 @@ const App = {
         this.setupModeButtons();
         this.setAppMode(this.state.appMode);
         this.updateAllMinusStyles();
+        if (typeof MathEngine !== 'undefined') {
+            MathEngine.init();
+        } else {
+            console.error("MathEngine not found. (math-engine.js is missing!)");
+        }
         console.log("Math Card Canvas: Ready!");
     },
 
@@ -634,61 +639,97 @@ const App = {
         // --- 2. 決定アクション (Enter) ---
         if (type === 'action' && value === '決定') {
             
+            let handled = false; // 何か処理をしたかどうかのフラグ
+
             // 【優先度 1】編集中なら、まず確定する
             if (this.state.activeInputCard) {
                 this.commitInput(); 
                 this.log("Input Committed (Enter)");
-                return; // ここで一旦終了（連打判定は次のEnterで）
+                handled = true; 
             }
 
             // 【優先度 2】直前(0.25秒以内)に数字を確定していたら、負の数トグル
-            const now = Date.now();
-            if (this.state.lastCommittedCard && (now - this.state.lastCommitTime < 250)) {
-                
-                const card = this.state.lastCommittedCard;
-                
-                // 数字カードなら符号反転
-                if (card.type === 'number') {
-                    let strVal = card.value.toString();
-                    if (strVal.startsWith('-')) {
-                        strVal = strVal.substring(1);
-                    } else {
-                        strVal = '-' + strVal;
-                    }
-                    card.updateValue(strVal);
-                    this.log("Quick Enter: Converted to Negative!");
+            else if (!handled && this.state.lastCommittedCard) {
+                const now = Date.now();
+                if (now - this.state.lastCommitTime < 250) {
                     
-                    this.state.lastCommitTime = 0; // リセットして連続反応防止
-                    return; // 移動処理はしない
+                    const card = this.state.lastCommittedCard;
+                    
+                    // 数字カードなら符号反転
+                    if (card.type === 'number') {
+                        let strVal = card.value.toString();
+                        if (strVal.startsWith('-')) {
+                            strVal = strVal.substring(1);
+                        } else {
+                            strVal = '-' + strVal;
+                        }
+                        card.updateValue(strVal);
+                        this.log("Quick Enter: Converted to Negative!");
+                        
+                        this.state.lastCommitTime = 0; // リセット
+                        handled = true;
+                    }
                 }
             }
 
-            // 【優先度 3】★追加実装: フォーカスの階層移動 (Ascent)
-            if (this.state.activeSlot) {
+            // 【優先度 3】フォーカスの階層移動 (Ascent)
+            if (!handled && this.state.activeSlot) {
                 const currentSlot = this.state.activeSlot;
-                
-                // 今いるスロットの親（コンテナカード）を探す
                 const containerCard = currentSlot.closest('.math-card');
 
                 if (containerCard) {
-                    // そのコンテナが入っている「さらに親のスロット」があるか？
                     const parentSlot = containerCard.parentElement;
-
                     if (parentSlot && parentSlot.classList.contains('card-slot')) {
-                        // 親スロットへ移動！
                         this.setFocus(parentSlot);
                         this.log("Focus: Ascended to Parent");
                     } else {
-                        // 親がいない（トップレベル）なら、フォーカス解除
                         this.clearFocus();
                         this.log("Focus: Cleared (Top Level)");
                     }
                 } else {
-                    // 万が一コンテナが見つからない場合も解除
                     this.clearFocus();
                 }
-                return;
             }
+
+
+            // ====== ★ここが更新ポイント！ エンジンの呼び出し処理 ======
+            
+            // 1. フィールド上のカードを全部集める
+            const field = document.getElementById(FIELD_ID);
+            // 待機エリア以外の、フィールド直下にあるカードだけを取得
+            const cards = Array.from(field.querySelectorAll(':scope > .math-card'));
+            
+            if (cards.length > 0) {
+                // 2. エンジンに渡して解析＆計算させる
+                if (typeof MathEngine !== 'undefined') {
+                    
+                    // Step 1: 読み取り (Parse)
+                    const parsedData = MathEngine.parse(cards);
+                    
+                    // Step 2: 計算 (Calculate) ★新機能！
+                    const result = MathEngine.calculate(parsedData);
+                    
+                    // --- 結果の表示処理 ---
+                    let resultMsg = "Calculation Error";
+                    
+                    // Fraction.jsのオブジェクトなら、見やすい文字列に変換
+                    if (result && typeof result.toFraction === 'function') {
+                        // toFraction(true) で「帯分数」形式にする
+                        resultMsg = result.toFraction(true); 
+                    } else {
+                        // エラーメッセージなどの場合
+                        resultMsg = result; 
+                    }
+
+                    // ログにドカンと表示！
+                    this.log(`Parsed Data:\n${JSON.stringify(parsedData, null, 2)}`);
+                    this.log(`\n★★★ Answer: ${resultMsg} ★★★`); // これが見たかったの！
+                    
+                    console.log("Parsed:", parsedData);
+                    console.log("Calculated:", result);
+                }
+            }
+            // ================================================
 
             return;
         }
@@ -1261,7 +1302,7 @@ if (container.classList.contains('container-fraction')) {
         window.addEventListener('touchend', onEnd);
         window.addEventListener('touchcancel', onEnd);
     },
-    
+
     // ====== 修正 1: ドロップゾーン判定（中心基準版） ======
     handleSortableDrag(e) {
         const target = this.dragState.target;
