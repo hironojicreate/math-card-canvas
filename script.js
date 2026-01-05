@@ -1157,92 +1157,111 @@ if (container.classList.contains('container-fraction')) {
 
     // 待機エリアのリサイズ機能
 
-    // script.js の setupResizer メソッドをこれに書き換え
+
+    // script.js の setupResizer メソッド（完全書き換え版）
 
     setupResizer() {
-        // ------ 共通の処理関数を作るの ------
-        const attachResizer = (handleId, targetId, direction) => {
-            const handle = document.getElementById(handleId);
-            const target = document.getElementById(targetId);
-
-            if (!handle || !target) return;
-
-            let isResizing = false;
-
-            // イベント開始（マウス & タッチ）
-            const startResize = (e) => {
-                isResizing = true;
-                handle.classList.add('active');
-                document.body.style.cursor = 'row-resize';
-                document.body.style.userSelect = 'none';
-                
-                // タッチの場合、スクロール暴発を防ぐ
-                if (e.type === 'touchstart' && e.cancelable) e.preventDefault();
-            };
-
-            handle.addEventListener('mousedown', startResize);
-            handle.addEventListener('touchstart', startResize, { passive: false });
-
-            // イベント終了
-            const endResize = () => {
-                if (isResizing) {
-                    isResizing = false;
-                    handle.classList.remove('active');
-                    document.body.style.cursor = '';
-                    document.body.style.userSelect = '';
-                }
-            };
-
-            // documentではなくwindowで監視して逃さないようにする
-            window.addEventListener('mouseup', endResize);
-            window.addEventListener('touchend', endResize);
-            window.addEventListener('touchcancel', endResize);
-
-            // 移動中（マウス & タッチ）
-            const resizeMove = (e) => {
-                if (!isResizing) return;
-
-                // 座標取得（共通化）
-                let clientY;
-                if (e.type.includes('touch')) {
-                    clientY = e.touches[0].clientY;
-                    if(e.cancelable) e.preventDefault(); // スクロール防止
-                } else {
-                    clientY = e.clientY;
-                    e.preventDefault();
-                }
-
-                // --- 計算ロジック ---
-                if (direction === 'bottom-up') {
-                    // 待機エリア用：下から上へ計算
-                    // (ウィンドウの高さ - Y座標)
-                    const newHeight = window.innerHeight - clientY;
-                    if (newHeight > 100 && newHeight < window.innerHeight * 0.6) {
-                        target.style.height = `${newHeight}px`;
-                    }
-                } else {
-                    // 情報エリア用：上から下へ計算
-                    // (Y座標 - 上のオフセット)
-                    // ※情報ウィンドウは一番上にある前提でシンプルにY座標を使うわ
-                    const newHeight = clientY; 
-                    if (newHeight > 40 && newHeight < 300) { // 最小40px, 最大300px
-                        target.style.height = `${newHeight}px`;
-                    }
-                }
-            };
-
-            // windowに対してイベントを張る
-            window.addEventListener('mousemove', resizeMove, { passive: false });
-            window.addEventListener('touchmove', resizeMove, { passive: false });
+        // 現在リサイズ中の情報を保持する変数（これが司令塔！）
+        let resizingState = {
+            isResizing: false,
+            targetId: null,   // 'info-window' or 'wait-area'
+            direction: null,  // 'top-down' or 'bottom-up'
+            handle: null
         };
 
-        // ------ 1. 待機エリア（下）のリサイズ ------
-        attachResizer('resize-handle', 'wait-area', 'bottom-up');
+        // --- A. リサイズ開始（ハンドルを触った時） ---
+        const startResize = (e, targetId, direction, handleElement) => {
+            // スクロールなどの標準動作を防ぐ（タッチの場合）
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation(); // 他の要素にイベントを伝えない
 
-        // ------ 2. 情報エリア（上）のリサイズ ------
-        attachResizer('info-resize-handle', 'info-window', 'top-down');
+            resizingState = {
+                isResizing: true,
+                targetId: targetId,
+                direction: direction,
+                handle: handleElement
+            };
+
+            handleElement.classList.add('active');
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none'; // 文字選択防止
+        };
+
+        // 各ハンドルにリスナーを設定
+        const setupHandle = (handleId, targetId, direction) => {
+            const handle = document.getElementById(handleId);
+            if (!handle) return;
+
+            // マウス
+            handle.addEventListener('mousedown', (e) => startResize(e, targetId, direction, handle));
+            
+            // タッチ（passive: false が超重要！）
+            handle.addEventListener('touchstart', (e) => startResize(e, targetId, direction, handle), { passive: false });
+        };
+
+        // 1. 待機エリア用ハンドル（下）の設定
+        setupHandle('resize-handle', 'wait-area', 'bottom-up');
+
+        // 2. 情報エリア用ハンドル（上）の設定
+        setupHandle('info-resize-handle', 'info-window', 'top-down');
+
+
+        // --- B. リサイズ中（画面全体で監視） ---
+        const onMove = (e) => {
+            if (!resizingState.isResizing) return;
+
+            // ドラッグ中は絶対にスクロールさせない
+            if (e.cancelable) e.preventDefault();
+
+            // 座標取得（マウス/タッチ共通化）
+            let clientY;
+            if (e.type.includes('touch')) {
+                clientY = e.touches[0].clientY;
+            } else {
+                clientY = e.clientY;
+            }
+
+            const target = document.getElementById(resizingState.targetId);
+            if (!target) return;
+
+            // 高さ計算ロジック
+            if (resizingState.direction === 'bottom-up') {
+                // 下の待機エリア： (ウィンドウの高さ - 指の位置)
+                const newHeight = window.innerHeight - clientY;
+                // 制限: 最小100px 〜 最大画面の60%
+                if (newHeight > 100 && newHeight < window.innerHeight * 0.6) {
+                    target.style.height = `${newHeight}px`;
+                }
+            } else {
+                // 上の情報エリア： (指の位置 そのまま)
+                const newHeight = clientY;
+                // 制限: 最小40px 〜 最大300px
+                if (newHeight > 40 && newHeight < 300) {
+                    target.style.height = `${newHeight}px`;
+                }
+            }
+        };
+
+        // --- C. リサイズ終了 ---
+        const onEnd = () => {
+            if (resizingState.isResizing) {
+                if (resizingState.handle) resizingState.handle.classList.remove('active');
+                resizingState.isResizing = false;
+                resizingState.handle = null;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        };
+
+        // 監視役は window に一人だけ配置！（これで競合しない）
+        window.addEventListener('mousemove', onMove, { passive: false });
+        window.addEventListener('touchmove', onMove, { passive: false });
+        
+        window.addEventListener('mouseup', onEnd);
+        window.addEventListener('touchend', onEnd);
+        window.addEventListener('touchcancel', onEnd);
     },
-
+    
     // ====== 修正 1: ドロップゾーン判定（中心基準版） ======
     handleSortableDrag(e) {
         const target = this.dragState.target;

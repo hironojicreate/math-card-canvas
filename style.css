@@ -65,6 +65,7 @@ body {
     z-index: 10; /* 手前に表示 */
     flex-shrink: 0; /* 潰れないように */
     position: relative;
+    touch-action: none;
 }
 
 .resize-handle::after {
