@@ -64,6 +64,15 @@ body {
     transition: background-color 0.2s;
     z-index: 10; /* 手前に表示 */
     flex-shrink: 0; /* 潰れないように */
+    position: relative;
+}
+
+.resize-handle::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    top: -10px; bottom: -10px; /* 上下に10pxずつ判定を広げる */
+    z-index: 10;
 }
 
 .resize-handle:hover,
@@ -973,30 +982,7 @@ button:hover { background-color: #f0f0f0; }
 }
 
 
-/* ====== 情報ウィンドウ（ログ） ====== */
-.info-window {
-    width: 100%;
-    /* メインエリアの上部に配置するためのスタイル調整 */
-    height: 80px;       /* 初期の高さを少し広めに */
-    min-height: 40px;
-    max-height: 300px;
-    
-    background-color: #2d3436;
-    color: #00cec9;
-    font-family: "Courier New", monospace;
-    font-size: 14px; /* 文字を少し大きく */
-    
-    border-bottom: 2px solid #b2bec3; /* 下線で区切る */
-    padding: 10px;
-    
-    overflow-y: auto;
-    resize: vertical; /* 縦にリサイズ可能 */
-    
-    display: flex;
-    flex-direction: column-reverse;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    z-index: 10; /* キャンバスより手前に */
-}
+
 
 
 .log-content {
@@ -1009,26 +995,38 @@ button:hover { background-color: #f0f0f0; }
    ========================================= */
 
 /* 1. 情報ウィンドウ（ログ画面） */
+
+/* ====== 情報ウィンドウ（ログ）完全版 ====== */
 .info-window {
     width: 100%;
-    height: 80px;       /* 程よい高さ */
-    min-height: 40px;
-    max-height: 300px;
     
-    background-color: #2d3436; /* ダークな背景 */
-    color: #00cec9;            /* サイバーな文字色 */
-    font-family: "Courier New", monospace;
+    /* 初期サイズの設定 */
+    height: 80px;      
+    min-height: 40px;
+    max-height: 300px; /* 画面を覆いすぎないように制限 */
+    
+    /* 見た目の設定 */
+    background-color: #2d3436; /* ダークグレー */
+    color: #00cec9;            /* シアン（青緑） */
+    font-family: "Courier New", monospace; /* プログラミングフォントっぽく */
     font-size: 14px;
     
+    /* 境界線と余白 */
     border-bottom: 2px solid #b2bec3;
     padding: 10px;
     
-    overflow-y: auto;    /* スクロール対応 */
-    resize: vertical;    /* ★重要：縦に引き伸ばせる設定 */
+    /* 挙動の設定 */
+    overflow-y: auto;    /* 溢れたらスクロール */
+    resize: none;        /* ★重要：CSS標準のリサイズ機能はOFF（自作ハンドルを使うから！） */
     
     display: flex;
     flex-direction: column-reverse; /* 新しいログを下から積む */
-    z-index: 10;
+    
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1); /* 軽い影 */
+    z-index: 10; /* 他の要素より手前に */
+    
+    /* スムーズな伸縮のために（お好みで） */
+    /* transition: height 0.1s; */ 
 }
 
 /* 2. 新しいボタンたち（矢印・決定など） */
