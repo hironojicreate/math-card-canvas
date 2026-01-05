@@ -150,6 +150,7 @@ button {
     transition: all 0.1s;
     font-weight: bold;
     color: #444;
+    touch-action: manipulation;
 }
 
 button:active { transform: translateY(2px); box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
