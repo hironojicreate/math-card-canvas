@@ -143,11 +143,10 @@ createDOM() {
 
  // ====== script.js : MathCard クラスの addDragSupport メソッド内 ======
 
-
- addDragSupport() {
+    addDragSupport() {
         const el = this.element;
         
-        // --- A. ホバー時のスマート選択ロジック (変更なし) ---
+        // --- A. ホバー時のスマート選択ロジック ---
         el.addEventListener('mouseover', (e) => {
             if (App.dragState.isDragging) return;
             e.stopPropagation();
@@ -160,19 +159,27 @@ createDOM() {
             el.classList.remove('hover-active');
         });
 
-        // --- B. ドラッグ開始 兼 クリックフォーカス判定 (マウス＆タッチ両対応) ---
+        // --- B. ドラッグ開始 兼 クリックフォーカス判定 ---
 
-        // ★共通の開始処理関数を作ったの！
         const handleStart = (e) => {
-            // マウスの右クリックなどは無視
+            // 右クリックは無視
             if (e.type === 'mousedown' && e.button !== 0) return;
+
+            // ★重要：タッチの場合、ここでデフォルト動作（画面スクロールなど）を殺す！
+            // これがないと、ドラッグしようとした瞬間に画面が動いて操作がキャンセルされちゃうの。
+            if (e.type === 'touchstart' && e.cancelable) {
+                e.preventDefault();
+            }
 
             e.stopPropagation();
 
-            // ====== ダブルクリック判定 (変更なし) ======
+            // ====== ダブルクリック判定 ======
             const currentTime = new Date().getTime();
             const timeDiff = currentTime - this.lastClickTime;
             
+            // タッチだと誤爆しやすいので、ダブルクリック判定は少し慎重にする
+            // (前回クリックから300ms以内 かつ ドラッグしていない場合...といきたいけど、
+            //  一旦シンプルにそのまま判定するわ)
             if (timeDiff < 300 && this.type === 'number') {
                 let strVal = this.value.toString();
                 if (strVal.startsWith('-')) {
@@ -186,50 +193,36 @@ createDOM() {
                 return; 
             }
             this.lastClickTime = currentTime;
-            // ============================================
+            // ================================
 
-            // ====== 詳細な初期フォーカスロジック ======
-            
-            // コンテナ系のカードかどうか判定
+            // ====== 初期フォーカスロジック ======
             if (this.type === 'root' || this.value === '分数' || 
                 this.value === '√' || this.value === '|x|' || 
                 this.type === 'power' || this.value === '( )') {
-                
-                // 共通関数にお任せ！
                 App.focusInitialSlot(el);
-
-            } 
-            // 数字カードなどをクリックした場合
-            else {
+            } else {
                 if (el.parentElement.classList.contains('card-slot')) {
                     App.setFocus(el.parentElement);
                 }
             }
-            // ====================================================
+            // ====================================
 
             App.commitInput();
             
-            // ★修正: タッチイベント(e)もそのまま渡す（App側で座標計算する前提）
+            // App側で座標計算するから、イベント(e)をそのまま渡す
             App.startDrag(e, el, this);
         };
 
-        // 1. マウス用リスナー
-        el.addEventListener('mousedown', (e) => {
-            e.preventDefault(); // テキスト選択などを防ぐ
-            handleStart(e);
-        });
+        // マウス用
+        el.addEventListener('mousedown', handleStart);
 
-        // 2. ★追加：タッチ用リスナー（iPad対応）
-        el.addEventListener('touchstart', (e) => {
-            // 2本指以上の操作は無視
-            if (e.touches && e.touches.length > 1) return;
-            
-            // 画面スクロールを防ぐ（カードを掴むため）
-            if (e.cancelable) e.preventDefault();
-            
-            handleStart(e);
-        }, { passive: false }); // ←重要！これが無いと preventDefault できないブラウザがあるの
+        // タッチ用 (passive: false が必須！)
+        el.addEventListener('touchstart', handleStart, { passive: false });
     }
+
+
+
+
 }
 
 // ====== アプリのメイン処理 ======
@@ -1016,20 +1009,47 @@ if (container.classList.contains('container-fraction')) {
 
 // --- ドラッグ＆ドロップ機能（ソート・挿入対応版） ---
 
-    setupGlobalDragEvents() {
-        document.addEventListener('mousemove', (e) => {
-            if (!App.dragState.isDragging) return;
-            App.updateDragPosition(e);
-            
-            // スロットのチェックと、プレースホルダーの移動処理
-            App.handleSortableDrag(e); 
+// script.js の App オブジェクト内
 
+    setupGlobalDragEvents() {
+        // ------ マウス用 (PC) ------
+        window.addEventListener('mousemove', (e) => {
+            if (!App.dragState.isDragging) return;
+            e.preventDefault(); // 範囲選択などを防ぐ
+            App.updateDragPosition(e);
+            App.handleSortableDrag(e);
         });
 
-        document.addEventListener('mouseup', () => {
+        window.addEventListener('mouseup', () => {
             if (!App.dragState.isDragging) return;
             App.endDrag();
         });
+
+        // ------ タッチ用 (iPad/スマホ) ------
+        // ★ここが修正ポイント！ document ではなく window にイベントを張るの！
+        // これで、指が画面外に出たり、DOMが変わっても追跡できるわ。
+        
+        window.addEventListener('touchmove', (e) => {
+            if (!App.dragState.isDragging) return;
+            
+            // ドラッグ中は画面全体のスクロールを完全に禁止する（超重要）
+            if (e.cancelable) e.preventDefault(); 
+            
+            App.updateDragPosition(e);
+            App.handleSortableDrag(e); 
+        }, { passive: false });
+
+        // タッチ終了時の処理を関数化
+        const handleTouchEnd = () => {
+            if (!App.dragState.isDragging) return;
+            App.endDrag();
+        };
+
+        // 指が離れた時
+        window.addEventListener('touchend', handleTouchEnd);
+        
+        // ★追加：電話着信やアラートなどで中断された時も、ちゃんと終了させる
+        window.addEventListener('touchcancel', handleTouchEnd);
     },
 
 // ====== 書き換え: setupSettingsModal の拡張 ======
