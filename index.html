@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math Card Canvas - 数式の箱庭</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="app-container">
+        
+
+        <div class="main-area">
+            <div id="info-window" class="info-window">
+                <div id="log-content" class="log-content">Ready.</div>
+            </div>
+
+            <div id="calc-field" class="field-area">
+                <div class="area-label">計算フィールド (Canvas)</div>
+            </div>
+
+            <div id="resize-handle" class="resize-handle"></div>
+
+            <div id="wait-area" class="wait-area">
+                <div class="area-label">待機エリア (Waiting Room)</div>
+                
+
+                <div class="wait-tools">
+                    <button id="btn-sort-wait" class="btn-func btn-small">整列</button>
+                    
+                    <button id="btn-clear-wait" class="btn-func btn-red btn-small">ゴミ箱</button>
+
+                    <div id="wait-clear-confirm" class="confirm-box hidden">
+                        <button id="btn-clear-yes" class="btn-func btn-red btn-small">実行</button>
+                        <button id="btn-clear-no" class="btn-func btn-small">×</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="keypad-grid">
+                
+                <div class="grid-head">システム</div>
+                <button id="btn-copy" class="btn-func">Copy</button>
+                <button id="btn-clear" class="btn-func btn-red" data-key="Escape">Clear</button>
+                <button id="btn-to-wait" class="btn-func">待機へ</button>
+                <button id="btn-settings" class="btn-func">⚙</button>
+
+                <button id="btn-toggle-fraction" class="btn-func span-2-col">小数/分数</button>
+                <button id="btn-mode-arithmetic" class="btn-func active">算数</button>
+                <button id="btn-mode-math" class="btn-func">数学</button>
+
+
+                <div class="grid-head">構造・コンテナ</div>
+                <button class="btn-create btn-struct" data-type="structure">分数</button>
+                <button class="btn-create btn-struct" data-type="structure">|x|</button>
+                <button class="btn-create btn-struct" data-type="operator">√</button>
+                <button class="btn-create btn-struct" data-type="operator">^○乗</button>
+                
+                <button class="btn-create btn-struct span-2-col" data-type="structure">( )</button>
+                <div class="empty-cell span-2-col"></div>
+
+
+                <div class="grid-head">変数・定数</div>
+                <button class="btn-create btn-var" data-type="variable">x</button>
+                <button class="btn-create btn-var" data-type="variable">y</button>
+                <button class="btn-create btn-var" data-type="variable">z</button>
+                <button class="btn-create btn-var btn-const" data-type="variable">π</button>
+                
+                <button class="btn-create btn-var" data-type="variable">a</button>
+                <button class="btn-create btn-var" data-type="variable">b</button>
+                <button class="btn-create btn-var" data-type="variable">c</button>
+                <button class="btn-create btn-var btn-const" data-type="variable">i</button>
+
+
+                <div class="grid-head">基本キー</div>
+                
+                <button class="btn-func" data-type="delete" data-key="Backspace">⌫</button>
+                <button class="btn-create btn-root span-2-col btn-wide-text" data-type="structure">式(始めに)</button>
+                <button class="btn-create btn-equal" data-type="operator" data-key="=">=</button>
+
+                <button class="btn-create" data-type="number" data-key="7">7</button>
+                <button class="btn-create" data-type="number" data-key="8">8</button>
+                <button class="btn-create" data-type="number" data-key="9">9</button>
+                <button class="btn-create" data-type="operator" data-key="/">÷</button>
+
+                <button class="btn-create" data-type="number" data-key="4">4</button>
+                <button class="btn-create" data-type="number" data-key="5">5</button>
+                <button class="btn-create" data-type="number" data-key="6">6</button>
+                <button class="btn-create" data-type="operator" data-key="*">×</button>
+
+                <button class="btn-create" data-type="number" data-key="1">1</button>
+                <button class="btn-create" data-type="number" data-key="2">2</button>
+                <button class="btn-create" data-type="number" data-key="3">3</button>
+                <button class="btn-create" data-type="operator" data-key="-">-</button>
+
+                <button class="btn-create" data-type="sign" data-key="n">負の数</button>
+                <button class="btn-create" data-type="number" data-key="0">0</button>
+                <button class="btn-create" data-type="number" data-key=".">.</button>
+                <button class="btn-create" data-type="operator" data-key="+">+</button>
+
+                <div class="empty-cell"></div>
+                <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowUp">↑</button>
+                <div class="empty-cell"></div>
+                
+                <button class="btn-nav btn-enter span-2-row" data-type="action" data-key="Enter">決定</button>
+
+                <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowLeft">←</button>
+                <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowDown">↓</button>
+                <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowRight">→</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>設定 (Settings)</h3>
+            
+            <div class="setting-item">
+                <span>情報ウィンドウを表示</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-info-window" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-item">
+                <label for="toggle-focus-hints">フォーカス移動ヒントを表示</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-focus-hints" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-item">
+                <span>負の数モード自動解除</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-auto-reset-negative" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <hr class="modal-divider">
+            
+            <div class="help-section">
+                <h4>負の数の入力について</h4>
+                <ul class="help-list">
+                    <li>
+                        <strong>ボタンで切替:</strong><br>
+                        「負の数」ボタンを押すとモードが切り替わります。
+                    </li>
+                    <li>
+                        <strong>確定時に連打:</strong><br>
+                        決定キー（Enter）を素早く2回押すと、負の数として確定します。
+                    </li>
+                    <li>
+                        <strong>後から変更:</strong><br>
+                        作成された数字カードをダブルクリックすると、符号（±）が反転します。
+                    </li>
+                </ul>
+            </div>
+            <div class="modal-actions">
+                <button id="close-modal-btn" class="btn-func">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="all-clear-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>全部消しますか？</h3>
+            <p>計算フィールドも、待機エリアも、<br>すべてのカードを消します。<br>よろしいですか？</p>
+            
+            <div class="modal-actions">
+                <button id="btn-all-clear-yes" class="btn-func btn-red">全部消す！</button>
+                <button id="btn-all-clear-no" class="btn-func">やっぱりやめる</button>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

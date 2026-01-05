@@ -1,0 +1,1324 @@
+/* ====== 全体の設定 ====== */
+* { box-sizing: border-box; }
+
+body {
+    margin: 0; padding: 0;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    background-color: #f0f4f8;
+    color: #333;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.app-container { display: flex; height: 100%; width: 100%; }
+
+/* ====== 左側：メインエリア ====== */
+/* ====== 左側：メインエリア（統合版） ====== */
+.main-area {
+    flex: 3;
+    display: flex;
+    flex-direction: column; /* 上から「情報・計算・待機」の順に積む */
+    border-right: 2px solid #ddd;
+    background-color: #ffffff;
+    height: 100vh; /* 画面の高さいっぱいに広げる */
+    /* overflow: hidden; は body で効いてるから無くてもOK */
+}
+
+/* 計算フィールド（可変サイズ・スクロールあり） */
+.field-area {
+    flex: 1; /* 残りのスペースを全部使う（ここが伸び縮みする） */
+    position: relative;
+    padding: 20px;
+    background-image: radial-gradient(#e0e0e0 1px, transparent 1px);
+    background-size: 20px 20px;
+    
+    /* ★スクロールの魔法★ */
+    overflow: auto; 
+}
+
+/* 計算フィールドの中に「透明な巨大な下敷き」を敷くことで、
+   カードが少なくてもスクロール（ドラッグ移動）できるようにする設定なの。
+*/
+.field-area::after {
+    content: "";
+    display: block;
+    position: absolute;
+    
+    /* ↓ ここで広さを決めているの。「ある程度」の広さ (2000px) に設定！ */
+    width: 2000px;
+    height: 2000px;
+    
+    top: 0;
+    left: 0;
+    z-index: -1; /* カードより奥（背景）に配置 */
+    pointer-events: none; /* マウス操作の邪魔をしない */
+}
+
+/* リサイザー（境界線ハンドル） */
+.resize-handle {
+    height: 8px; /* 掴みやすい太さ */
+    background-color: #dcdde1;
+    cursor: row-resize; /* カーソルを上下矢印に */
+    border-top: 1px solid #ccc;
+    border-bottom: 1px solid #ccc;
+    transition: background-color 0.2s;
+    z-index: 10; /* 手前に表示 */
+    flex-shrink: 0; /* 潰れないように */
+}
+
+.resize-handle:hover,
+.resize-handle.active {
+    background-color: #0984e3; /* ホバー時・ドラッグ時は青く */
+}
+
+/* 待機エリア（固定サイズ・自由配置） */
+.wait-area {
+    height: 200px; /* 全体の1/5くらいの高さ固定 */
+    min-height: 150px;
+    background-color: #eef2f5;
+    border-top: 4px double #b2bec3; /* 境界線を少しリッチに */
+    position: relative; /* 子要素をabsoluteにするため */
+    padding: 10px;
+    
+    overflow: auto;    
+    box-shadow: inset 0 5px 10px rgba(0,0,0,0.05); /* 少し凹んだ感じ */
+    z-index: 5; /* フィールドより手前に */
+}
+
+/* 待機エリア内のボタン置き場 */
+.wait-tools {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column; /* 縦に並べる */
+    gap: 5px;
+    z-index: 50; /* カードより手前に */
+}
+
+/* 汎用：隠すクラス */
+.hidden {
+    display: none !important;
+}
+
+/* 確認ボックス（ボタンを横並びにする） */
+.confirm-box {
+    display: flex;
+    gap: 4px; /* ボタン同士の隙間 */
+    animation: fadeIn 0.2s; /* ふわっと出す */
+}
+
+.btn-small {
+    font-size: 12px;
+    padding: 4px 8px;
+}
+
+.area-label {
+    position: absolute; top: 5px; left: 10px;
+    font-size: 12px; color: #888; pointer-events: none;
+}
+
+/* ====== 右側：サイドバー（キーパッド） ====== */
+.sidebar {
+    flex: 1; /* 幅 */
+    min-width: 250px; /* 狭くなりすぎないように */
+    background-color: #f8f9fa;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -2px 0 5px rgba(0,0,0,0.05);
+    overflow-y: auto; /* 中身が溢れたらスクロールバーを出す */
+}
+
+.sidebar h2 { margin: 0 0 15px 0; font-size: 16px; color: #555; text-align: center; }
+
+/* --- グリッドレイアウト --- */
+.keypad-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr); /* 4列 */
+    grid-auto-rows: 50px; /* ボタンの基本の高さ */
+    gap: 2px; /* ボタン同士の隙間 */
+}
+
+/* ボタンの基本スタイル */
+button {
+    font-size: 18px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background-color: #fff;
+    cursor: pointer;
+    transition: all 0.1s;
+    font-weight: bold;
+    color: #444;
+}
+
+button:active { transform: translateY(2px); box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
+button:hover { background-color: #f0f0f0; }
+
+/* --- グリッド内のカテゴリ見出し --- */
+.grid-head {
+    grid-column: 1 / -1; /* これで横一列を占領して強制改行させる */
+    font-size: 12px;
+    color: #888;
+    margin-top: 10px;
+    margin-bottom: 2px;
+    padding-left: 2px;
+    font-weight: bold;
+}
+
+/* 最初の見出しはマージンなし */
+.grid-head:first-child {
+    margin-top: 0;
+}
+
+
+/* --- 特殊な配置用クラス --- */
+.span-2-col { grid-column: span 2; } /* 横に2つ分 */
+.span-3-col { grid-column: span 3; } /* 横に3つ分 */
+.span-2-row { grid-row: span 2;    } /* 縦に2つ分（プラスボタン用） */
+.span-4-col { grid-column: 1 / -1; } /* 横一列全部貫く！ */
+
+/* 文字数が多いボタン用 */
+.btn-wide-text {
+    font-size: 13px; /* 少し文字を小さくして収める */
+    letter-spacing: 1px; /* 文字間を少し開けて読みやすく */
+}
+
+/* --- 色分け --- */
+.btn-func { background-color: #e2e6ea; font-size: 14px; }
+.btn-red  { background-color: #ffe6e6; border-color: #ffcccc; color: #d63031; }
+.btn-plus { background-color: #fff0f0; color: #d63031; } /* プラスだけ少し目立たせる？ */
+.btn-equal{ background-color: #4a90e2; color: #fff; border-color: #357abd; }
+.btn-equal:hover { background-color: #357abd; }
+
+/* New! 変数（緑系） */
+.btn-var    { background-color: #e6fffa; color: #00b894; border-color: #b2f5ea; }
+.btn-var:hover { background-color: #b2f5ea; }
+
+/* New! 構造・コンテナ（紫系） */
+.btn-struct { background-color: #f3e6ff; color: #9b59b6; border-color: #e0ccff; }
+.btn-struct:hover { background-color: #e0ccff; }
+
+/* New! 「式」コンテナを目立たせる（濃い紫） */
+.btn-root   { background-color: #9b59b6; color: #fff; border-color: #8e44ad; }
+.btn-root:hover { background-color: #8e44ad; }
+
+
+/* ====== カード（Card）のデザイン ====== */
+.math-card {
+    /* ... (既存のスタイルはそのまま維持) ... */
+    display: inline-flex; 
+    justify-content: center; 
+    align-items: center;
+    /* width: 60px; height: 80px;  ← これを削除または auto で上書きできるようにする */
+    min-width: 60px; /* 最小サイズにする */
+    min-height: 80px;
+    background-color: #fff;
+    border: 2px solid #333; 
+    border-radius: 8px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    font-size: 24px; 
+    font-weight: bold;
+    user-select: none;
+    position: absolute;
+    cursor: grab;
+    /* ★重要：親コンテナに入っても勝手に縮まないようにする */
+    flex-shrink: 0; 
+    /* ★追加：隣のカードとの距離 */
+    margin: 0 2px;
+}
+
+/* 数字カード：枠線を透明にする */
+.card-number { 
+    border-color: transparent; /* ← ここを変更！(#4a90e2 から transparent へ) */
+    color: #4a90e2; 
+    background-color: #ffffff; 
+}
+
+/* 1. 定数ボタン（π, i）を目立たせるスタイル（黄色系で少しリッチに） */
+.btn-const {
+    background-color: #fff7d1; /* 薄いゴールド */
+    color: #b7950b;            /* 濃いゴールド文字 */
+    border-color: #f1c40f;     /* 枠線 */
+    font-weight: 900;          /* 太字で強調 */
+}
+.btn-const:hover {
+    background-color: #f1c40f;
+    color: #fff;
+}
+
+/* 2. 変数カードのスタイル（新設） */
+/* 演算子カード(.card-operator)のサイズ設定を真似して、色を変数用にするの */
+.card-variable {
+    border-color: transparent;
+    color: #00b894; /* ボタンと同じ緑系 */
+    background-color: #ffffff;
+    
+    /* ★サイズを演算子と同じにする魔法 */
+    min-width: 45px !important;
+    width: 45px !important;
+    min-height: 45px !important;
+    height: 45px !important;
+    
+    font-size: 20px;
+    
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0 4px;
+    align-self: center;
+}
+
+/* 演算子カード：枠線を透明にする */
+/* 演算子カード：正方形で小さく、リズムを作る */
+.card-operator { 
+    /* 色設定（さっき変えたところ） */
+    border-color: transparent; 
+    color: #e25c4a; 
+    background-color: #ffffff; 
+    
+    /* ★ここが変更ポイント！サイズを強制的に正方形にする */
+    min-width: 45px !important;   /* 幅を狭く */
+    width: 45px !important;       /* 固定幅 */
+    
+    min-height: 45px !important;  /* 高さを低く */
+    height: 45px !important;      /* 固定高さ */
+    
+    /* 文字サイズもほんの少し小さくしてバランスを取る？（お好みで！） */
+    font-size: 20px; 
+    
+    /* 中央揃えの念押し */
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    
+    /* 上下のマージンを少し調整して、数字カード（背が高い）の真ん中に来るように */
+    margin: 0 4px; 
+    align-self: center; /* Flexbox内で上下中央に配置 */
+}
+
+/* ====== カメレオン機能：負の符号としてのマイナス ====== */
+/* 演算子カード（赤）にこのクラスがつくと、
+   見た目が数字カード（青）に化けます。
+*/
+.card-operator.unary-minus {
+    color: #4a90e2 !important;            /* 数字と同じ青 */
+    /* background-color: #f0f8ff !important; 数字と同じ薄い青背景 */
+    
+    /* 補足: 枠線などは .card-operator の設定（透明）が引き継がれるからそのままでOK */
+}
+
+/* ドラッグ中のカード */
+.math-card.dragging {
+    opacity: 0.6; /* 少し透けさせる */
+    cursor: grabbing !important;
+    box-shadow: 5px 5px 15px rgba(0,0,0,0.3); /* 影を大きくして浮いている感を出す */
+    z-index: 1000; /* 最前面に持ってくる */
+}
+
+/* ドラッグ中は、カード本体も、その中にあるスロットも、文字も、全てマウスを無視させる */
+/* これにより、裏にあるドロップゾーンを確実に検知できるようになるわ */
+.math-card.dragging,
+.math-card.dragging * {
+    pointer-events: none !important;
+}
+
+/* ★追加：ドラッグ中は、ハンドルも強制的に「グー」にする */
+.math-card.dragging .drag-handle {
+    cursor: grabbing !important;
+}
+
+/* ====== 鉄壁のガード：ドラッグ中のカード内にはゾーンを表示させない ====== */
+.math-card.dragging .drop-zone {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+/* ====== 折りたたみ（アコーディオン）機能用 ====== */
+
+/* 隠されているボタン */
+.hidden-btn {
+    display: none !important;
+}
+
+/* クリックできるようになった見出し */
+.grid-head {
+    cursor: pointer; /* 指さしカーソルにする */
+    user-select: none; /* 文字選択されないようにする */
+    display: flex;
+    justify-content: space-between; /* 文字と矢印を左右に離す */
+    align-items: center;
+    background-color: #eee; /* クリックできる感出すために少し色をつける */
+    padding: 5px 8px;
+    border-radius: 4px;
+    margin-top: 15px; /* マージンを少し広げる */
+}
+
+.grid-head:hover {
+    background-color: #e2e2e2;
+}
+
+/* 開いている時の矢印（CSSで描いちゃう！） */
+.grid-head::after {
+    content: "▼";
+    font-size: 10px;
+    color: #888;
+}
+
+/* 閉じている時の矢印 */
+.grid-head.closed::after {
+    content: "◀"; /* または ▶ */
+}
+
+
+/* スロット（カードを受け入れる穴） */
+.card-slot {
+    min-width: 50px;
+    min-height: 70px;
+    
+    /* ★ここを変更！ */
+    background-color: transparent; /* 背景を透明に */
+    border: 2px solid transparent; /* 線も透明に（太さは残してレイアウト崩れ防止） */
+    
+    border-radius: 6px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    margin: 2px;
+    /* margin: 2px; ← 既存のこれはそのままでOKかも確認 */
+    transition: all 0.2s; /* アニメーションを滑らかに */
+    flex-shrink: 0;
+}
+
+/* フォーカスがあたっているスロット */
+.card-slot.focused {
+    background-color: #fff8e1; /* 薄い黄色で「ここだよ！」とアピール */
+    border-color: #f1c40f;     /* 枠線も黄色く */
+    box-shadow: inset 0 0 5px rgba(241, 196, 15, 0.5); /* 内側に光らせる */
+}
+
+
+/* ドラッグ中のカードが上に来た時、スロットを光らせる */
+.card-slot.drag-over {
+    background-color: #e0f7fa; /* 水色っぽく */
+    border-color: #26c6da;
+}
+
+/* スロットに入ったカード（スタイルリセット） */
+.card-slot .math-card {
+    position: static; /* 自由配置をやめて、親に従う */
+    box-shadow: none; /* 影を消してフラットに */
+    margin: 0;
+    /* サイズを親に合わせるか、そのままにするか */
+    transform: scale(0.9); /* 少し小さくして入った感を出す */
+}
+
+/* --- 式プレート（最親コンテナ） --- */
+
+/* 2. コンテナ類（分数・式）は中身に合わせて広がるようにする */
+.container-root, 
+.container-fraction {
+    width: auto !important; /* 幅を自動にする */
+    height: auto !important; /* 高さを自動にする */
+}
+
+/* 横に伸びるお盆 */
+/* --- 式プレート（旧：最親コンテナ → 新：汎用グループコンテナ） --- */
+
+.container-root {
+    /* 他のコンテナと同じスタイルに統一 */
+    display: inline-flex;
+    align-items: center; /* 上下中央揃え */
+    
+    background-color: #fff; /* 背景は白 */
+    border: 1px solid #ddd; /* 薄いグレーの枠線 */
+    border-radius: 4px;     /* 角丸 */
+    padding: 4px;           /* 余白 */
+    
+    /* サイズ制限は自動 */
+    width: auto !important;
+    height: auto !important;
+    min-width: 50px;
+    min-height: 60px;
+
+    /* 強い影は削除 */
+    box-shadow: none !important;
+    
+    cursor: grab;
+    
+    /* 並び順の微調整 */
+    margin: 0 2px;
+}
+
+/* ラベルは廃止したので削除（もしHTMLに残っていても消す） */
+.root-label {
+    display: none;
+}
+
+/* 式プレートの中のスロット */
+.root-slot {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    
+    /* 背景色を削除して透明に */
+    background-color: transparent;
+    border: none;
+    
+    /* 余計なパディングを削除 */
+    padding: 0;
+    margin: 0;
+    
+    min-width: 40px;
+    min-height: 50px;
+}
+
+/* --- 分数コンテナ（帯分数対応版） --- */
+
+/* 1. 大枠（カード全体）は「横並び」にする */
+.container-fraction {
+    display: inline-flex;
+    flex-direction: row; /* 横並び！ */
+    align-items: center; /* 上下中央揃え */
+    background-color: #fff;
+    padding: 5px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    /*gap: 4px; *//* 整数と分数の間の隙間 */
+}
+
+/* 2. 新設：右側の分数部分（分子・線・分母）を「縦並び」にする */
+.fraction-part {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+
+/* 1. 普段は極細にする設定 */
+.card-slot.integer-part,
+.card-slot.coefficient-part {  /* ★ここに追加 */
+    margin: 0;
+    min-width: 12px; /* 普段は狭く */
+    width: auto; 
+    border-color: transparent;
+    background-color: transparent;
+    transition: all 0.2s; /* ヌルっと広がるように */
+}
+
+/* 2. ドラッグして近づけた時だけ広げる設定 */
+.card-slot.integer-part.drag-over,
+.card-slot.coefficient-part.drag-over { /* ★ここに追加 */
+    min-width: 40px; /* 広げる！ */
+    background-color: #e0f7fa;
+    border-color: #26c6da;
+}
+
+/* ついでに、センサー本体（親要素）のz-indexも上げておく */
+.integer-part .drop-zone,
+.coefficient-part .drop-zone {
+    z-index: 50;
+}
+
+/* 3. 中にあるドロップゾーンの調整（狭い場所用） */
+.integer-part .drop-zone::after,
+.coefficient-part .drop-zone::after { /* ★ここに追加 */
+    width: 27px;
+    left: -12px;
+    height: 70px; 
+    z-index: 50;
+}
+
+.integer-part .drop-zone.active::after,
+.coefficient-part .drop-zone.active::after { /* ★ここに追加 */
+    width: 6px;
+    left: -3px;
+}
+
+/* 4. 横棒（分数パーツの中で幅いっぱいにする） */
+.fraction-line {
+    width: 100%;
+    height: 2px;
+    background-color: #333;
+    margin: 2px 0;
+}
+
+/* 共通：記号つきコンテナ（√, (), |x|） */
+.container-symbol {
+    display: inline-flex;
+    align-items: center;
+    background-color: #fff;
+    
+    /* ★ここを修正！ */
+    border: 1px solid #ddd; /* 分数と同じ薄いグレーの枠線にする */
+    border-radius: 4px;
+    padding: 2px 4px; /* 少しパディングを調整 */
+
+    /* ★重要：元のカードの強い影を消す */
+    box-shadow: none !important; 
+}
+
+
+/* ====== √（ルート）の伸縮対応 ====== */
+
+/* 1. コンテナの高さを揃える設定 */
+.container-sqrt {
+    align-items: stretch !important; /* 中身に合わせて背伸びさせる */
+    padding-left: 0; /* 左の隙間をなくす */
+}
+
+/* 2. SVGのラッパー（入れ物） */
+.symbol-sqrt-svg {
+    width: 20px; /* ★横幅はここで固定！ */
+    margin-right: -1px; /* 屋根（スロット）と隙間なくくっつける */
+    flex-shrink: 0;
+    display: flex;
+    align-items: center; /* 念のため */
+}
+
+/* ルート記号の特殊調整 */
+.symbol-sqrt-start {
+    font-size: 24px;
+    /* margin-right: 0; ← 元のこれは消す */
+    margin-right: -4px; /* 少し右に食い込ませて、スロットと連結させる */
+    line-height: 1;     /* 高さを詰める */
+}
+
+/* ルートの屋根（上線）付きスロット */
+.sqrt-border-top {
+    /* --- 線の設定（SVGの線幅2pxと合わせる） --- */
+    border-top: 2px solid #333; 
+    
+    /* その他の枠線を消す */
+    border-right: none !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-radius: 0; 
+    
+    /* --- 位置合わせの微調整 --- */
+    /* SVGの線と高さを合わせるためのパディング */
+    /* もし線がズレて見えたら、ここの数字を 5px〜7px あたりで調整してね */
+    padding-top: 5px;   
+    padding-bottom: 0;
+    
+    /* 左側の記号（SVG）と隙間なくくっつける */
+    margin-left: 0; 
+    
+    /* 横に伸びる設定 */
+    flex-grow: 1; 
+}
+
+/* ★コンテナ選択時のスロット拡張（DnDしやすくする神対応） 
+   親（.selected-container）が選ばれている時、
+   左側の狭いスロット（係数・整数）を強制的に広げる！
+*/
+.math-card.selected-container > .coefficient-part,
+.math-card.selected-container > .integer-part {
+    /* min-width, margin, transition はそのまま */
+    min-width: 40px;       
+    margin-right: 4px;     
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+/* 優先順位の修正：
+   係数・整数スロットは普段「透明」だけど、
+   フォーカスがあたった時（.focused）だけは、強制的に黄色くする！
+*/
+.card-slot.integer-part.focused,
+.card-slot.coefficient-part.focused {
+    border-color: #f1c40f !important;     /* 透明を上書きして黄色枠に */
+    background-color: #fff8e1 !important; /* 透明を上書きして薄い黄色に */
+    box-shadow: inset 0 0 5px rgba(241, 196, 15, 0.5) !important;
+    
+    /* フォーカス時も見やすくするために、最低限の幅は確保する */
+    min-width: 40px; 
+}
+
+/* 補足：広げた時に中のドロップゾーン（緑の棒）もちゃんと反応するように調整 */
+.math-card.selected-container > .integer-part .drop-zone::after,
+.math-card.selected-container > .coefficient-part .drop-zone::after {
+    width: 60px;
+    left: -30px;
+}
+
+/* 緑の棒（アクティブ時）も、太く見やすいサイズに戻す */
+.math-card.selected-container > .integer-part .drop-zone.active::after,
+.math-card.selected-container > .coefficient-part .drop-zone.active::after {
+    width: 12px;
+    left: -6px;
+}
+
+/* ====== 入力（編集）中のスタイル ====== */
+.math-card.editing {
+    border-color: #f1c40f; /* 黄色っぽい色で注意を引く */
+    box-shadow: 0 0 10px rgba(241, 196, 15, 0.5); /* ほのかに光らせる */
+    background-color: #fffdf0;
+    z-index: 2000; /* 誰よりも手前に */
+}
+
+/* ====== 並び替え用のプレースホルダー ====== */
+.drop-placeholder {
+    width: 4px; /* 細い棒 */
+    height: 60px; /* カードの高さに合わせる */
+    background-color: #00b894; /* 緑色のガイドライン */
+    border-radius: 2px;
+    margin: 0 5px; /* 左右に少し隙間を空ける */
+    pointer-events: none; /* マウスの邪魔をしない */
+    flex-shrink: 0;
+    animation: fadeIn 0.2s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scaleY(0); }
+    to { opacity: 1; transform: scaleY(1); }
+}
+
+
+/* ====== コンテナ本体のカーソル制限 ====== */
+/* コンテナ系（構造物）は、本体を掴んでも動かないようにする */
+.container-fraction,
+.container-symbol {
+    cursor: default !important; /* カーソルを矢印に戻す */
+}
+
+/* ====== GPT提案の最適化：装飾要素のイベント無視 ====== */
+/* これで、文字や記号がドラッグ判定の邪魔をしなくなるわ！ */
+.root-label,        /* 式ラベル */
+.symbol-char,       /* ( ) | などの文字 */
+.symbol-sqrt-svg,   /* √ の画像 */
+.fraction-line,     /* 分数の横棒 */
+.area-label         /* エリアのラベル */
+{
+    pointer-events: none; /* マウスの当たり判定をなくす（透明人間化） */
+}
+
+/* 以前は透明化していましたが、直接掴めるように auto (または削除) にします */
+
+.container-fraction,
+.container-symbol,
+.container-power, /* べき乗も追加 */
+.container-root   /* ルートも念のため */
+{
+    /* pointer-events: none;  ← これを削除！ */
+    cursor: grab; /* 掴めるよ、というカーソルにする */
+}
+
+/* 2. でも、中にある「スロット」はちゃんと反応させる */
+.card-slot {
+    pointer-events: auto;
+}
+
+/* 3. ドラッグ用のハンドルも反応させる（これがないと動かせなくなる！） */
+.drag-handle {
+    pointer-events: auto;
+}
+
+/* ====== 3. ホバー時のスタイル（式プレートの色除外版） ====== */
+
+/* ケースA: そのカードにマウスが乗った時 */
+.math-card.hover-active {
+    /* 枠線はどれも共通で水色にして、選択中であることを伝える */
+    border-color: #00d2ff !important;
+    
+    /* 影も共通（軽量版） */
+    box-shadow: 2px 2px 0px rgba(0, 150, 255, 0.4); 
+    
+    z-index: 100;
+}
+
+/* ★修正ポイント：背景色は「式プレート以外」の時だけ変える */
+.math-card.hover-active:not(.container-root) {
+    background-color: #e6f7ff !important;
+}
+
+/* ケースB: 親が選ばれた時、その中身（子孫）も光らせる */
+.math-card.hover-active .math-card {
+    border-color: #00d2ff !important;
+    
+    /* ここも念のため「式プレート以外」なら水色にする */
+    /* （入れ子で式プレートが入ることは今の仕様ではないかもだけど、安全策） */
+}
+
+/* 子要素の背景色変更（式プレート以外） */
+.math-card.hover-active .math-card:not(.container-root) {
+    background-color: #e6f7ff !important;
+    box-shadow: none !important;
+}
+
+/* 補足: ドラッグ中はエフェクトを切る */
+.math-card.dragging.hover-active {
+    border-color: #333 !important; 
+    background-color: #fff !important;
+    /* 式プレートの場合、ドラッグ中は元の紫に戻す */
+}
+.math-card.container-root.dragging.hover-active {
+    background-color: #9b59b6 !important;
+}
+
+/* 4. 数字カードなどは元々クリックできるのでそのままでOK */
+
+/* ====== 物理ドロップゾーン（高さゼロ・完全幽体離脱版） ====== */
+.drop-zone {
+    /* 1. レイアウトへの影響を完全に消す */
+    width: 0px;
+    height: 0px; /* ★ここが重要！高さをゼロにする */
+    margin: 0;
+    
+    /* 2. 位置合わせの基準 */
+    position: relative; 
+    display: inline-flex;
+    vertical-align: middle; /* 上下中央に来るように */
+    
+    /* 3. はみ出しを許可 */
+    overflow: visible; 
+    
+    /* 本体は透明 */
+    background-color: transparent; 
+    z-index: 1000; 
+}
+
+/* 擬似要素で「広範囲センサー」兼「見た目の棒」を作る */
+.drop-zone::after {
+    content: "";
+    position: absolute;
+    
+    /* ★高さの設定をこっちに移動！ */
+    height: 90px; 
+    
+    /* ★上下中央に配置するためのテクニック */
+    top: 50%; 
+    transform: translateY(-50%); /* 自分の高さの半分だけ上にずらす＝ど真ん中 */
+    
+    /* センサー範囲（幅） */
+    width: 60px;
+    left: -30px;
+    
+    background-color: transparent; 
+    /* background-color: rgba(255,0,0,0.1); */
+    
+    transition: all 0.1s;
+    cursor: grabbing;
+}
+
+/* マウスがセンサーに触れた時（アクティブ） */
+.drop-zone.active {
+    z-index: 1001; 
+}
+
+/* アクティブ時の「緑の棒」の見た目 */
+.drop-zone.active::after {
+    background-color: #00b894; 
+    width: 12px;
+    
+    /* 位置調整（幅の半分ずらす） */
+    left: -6px;
+    
+    border-radius: 6px;
+    box-shadow: 0 0 8px rgba(0, 184, 148, 0.6);
+}
+
+
+/* ====== 身代わりスペーサー（レイアウトシフト防止） ====== */
+.ghost-spacer {
+    /* 見た目は透明 */
+    background-color: transparent;
+    /* 枠線もなし（デバッグしたい時は border: 1px dashed red; とかするといいの） */
+    border: none;
+    
+    /* マウスの邪魔をしない（これ重要！） */
+    pointer-events: none;
+    
+    /* 勝手に縮まないようにする */
+    flex-shrink: 0;
+    
+    /* カードと同じ隙間を確保 */
+    margin: 0 2px;
+}
+
+/* ====== べき乗（累乗）コンテナのデザイン ====== */
+.container-power {
+    display: inline-flex;
+    align-items: flex-start;
+    
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 2px 4px;
+    box-shadow: none !important;
+    
+    cursor: grab;
+    
+    position: relative;
+    z-index: 1; 
+}
+
+/* --- ベース（土台）スロット --- */
+.card-slot.base-slot {
+    min-width: 40px;
+    min-height: 60px;
+    
+    background-color: transparent;
+    border-color: transparent; 
+    
+    margin-right: 0px;
+    
+    display: flex;
+    align-items: center; 
+    justify-content: center; 
+    
+    z-index: 1;
+}
+
+.card-slot.base-slot > .drop-zone:last-child:not(:first-child) {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+.card-slot.base-slot:empty::after {
+    content: "○の";
+    color: #ccc;
+    font-size: 14px;
+    pointer-events: none;
+}
+
+/* --- 指数（右上の小さい数字）スロット --- */
+.card-slot.exponent-slot {
+    /* 親のサイズ制限解除 */
+    min-width: 30px !important; 
+    width: auto !important;
+    min-height: 30px !important;
+    height: auto !important;
+    
+    background-color: rgba(255, 255, 255, 0.8);
+    border: 1px dashed #ccc;
+    border-radius: 4px;
+    
+    /* 位置合わせ */
+    margin-left: -20px;
+    margin-top: 0px;
+    
+    z-index: 10;
+    
+    /* ★重要修正 1：左揃えに変更！ */
+    display: flex;
+    justify-content: flex-start; /* 左（本体側）に寄せる */
+    align-items: center;
+    
+    /* 中身がはみ出さないように */
+    padding: 2px; /* 少し余白を持たせる */
+    box-sizing: border-box;
+}
+
+/* ★重要修正 2：中身を物理的に小さくする（transform禁止） */
+/* 指数スロット内の「すべての要素」に対してスタイルを強制上書き */
+.exponent-slot .math-card,
+.exponent-slot .container-root,
+.exponent-slot .container-fraction,
+.exponent-slot .container-symbol {
+    /* 1. transformはやめる（座席が小さくならないから） */
+    transform: none !important;
+    
+    /* 2. サイズ制限を完全解除 */
+    min-width: 0 !important;
+    min-height: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    
+    /* 3. 余白と文字サイズを削ぎ落とす（これで物理的に小さくなる） */
+    padding: 2px 4px !important;
+    margin: 0 !important;
+    font-size: 14px !important; /* 文字を小さく */
+    border-radius: 4px !important;
+    border-width: 1px !important;
+    
+    box-shadow: none !important;
+    position: static !important;
+}
+
+/* さらに奥深く！スロット内の「子スロット」も小さくする */
+.exponent-slot .card-slot {
+    min-width: 15px !important; /* 普段の50pxから大幅減 */
+    min-height: 20px !important; /* 普段の70pxから大幅減 */
+    padding: 0 2px !important;
+}
+
+/* 数字単体は正方形っぽく整える */
+.exponent-slot .card-number,
+.exponent-slot .card-variable {
+    width: 26px !important;
+    height: 26px !important;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* 指数ガイド文字 */
+.card-slot.exponent-slot:empty::after {
+    content: "○乗";
+    color: #ccc;
+    font-size: 10px;
+    pointer-events: none;
+    /* 左揃えにしたので、中央に来るようにmargin調整が必要かもだけど、一旦これで行く */
+    margin-left: 4px; 
+}
+
+/* ====== 追加：指数スロット内のドロップゾーン調整 ====== */
+.card-slot.exponent-slot .drop-zone::after {
+    /* 通常90pxある緑の棒を、スロットに合わせて短くする */
+    height: 50px !important; 
+    
+    /* ついでに、センサーの位置ズレが起きないよう念押し */
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+}
+
+
+/* ====== 情報ウィンドウ（ログ） ====== */
+.info-window {
+    width: 100%;
+    /* メインエリアの上部に配置するためのスタイル調整 */
+    height: 80px;       /* 初期の高さを少し広めに */
+    min-height: 40px;
+    max-height: 300px;
+    
+    background-color: #2d3436;
+    color: #00cec9;
+    font-family: "Courier New", monospace;
+    font-size: 14px; /* 文字を少し大きく */
+    
+    border-bottom: 2px solid #b2bec3; /* 下線で区切る */
+    padding: 10px;
+    
+    overflow-y: auto;
+    resize: vertical; /* 縦にリサイズ可能 */
+    
+    display: flex;
+    flex-direction: column-reverse;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    z-index: 10; /* キャンバスより手前に */
+}
+
+
+.log-content {
+    white-space: pre-wrap; /* 改行をそのまま表示 */
+    line-height: 1.4;
+}
+
+/* =========================================
+   ここから下を追加（新レイアウト用）
+   ========================================= */
+
+/* 1. 情報ウィンドウ（ログ画面） */
+.info-window {
+    width: 100%;
+    height: 80px;       /* 程よい高さ */
+    min-height: 40px;
+    max-height: 300px;
+    
+    background-color: #2d3436; /* ダークな背景 */
+    color: #00cec9;            /* サイバーな文字色 */
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+    
+    border-bottom: 2px solid #b2bec3;
+    padding: 10px;
+    
+    overflow-y: auto;    /* スクロール対応 */
+    resize: vertical;    /* ★重要：縦に引き伸ばせる設定 */
+    
+    display: flex;
+    flex-direction: column-reverse; /* 新しいログを下から積む */
+    z-index: 10;
+}
+
+/* 2. 新しいボタンたち（矢印・決定など） */
+
+/* 矢印キー */
+.btn-nav {
+    background-color: #dfe6e9;
+    font-weight: bold;
+    color: #636e72;
+}
+.btn-arrow {
+    font-size: 18px;
+}
+.btn-arrow:active {
+    background-color: #b2bec3;
+    transform: translateY(2px);
+}
+
+/* 決定ボタン（Enter） */
+.btn-enter {
+    background-color: #0984e3; /* 鮮やかな青 */
+    color: white;
+    font-size: 16px;
+    border-color: #0076c0;
+    
+    /* ボタンの文字をど真ん中に */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.btn-enter:hover {
+    background-color: #0076c0;
+}
+.btn-enter:active {
+    background-color: #0069aa;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* 負の数ボタン */
+.btn-create[data-key="n"] {
+    background-color: #ffecd1; /* 薄いオレンジ */
+    color: #e67e22;
+    font-size: 14px;
+}
+
+/* レイアウト調整用 */
+.grid-gap-line {
+    grid-column: 1 / -1;
+    height: 2px;
+    background-color: #ddd;
+    margin: 5px 0;
+}
+.empty-cell {
+    pointer-events: none;
+}
+
+/* =========================================
+   モーダル & 設定画面のスタイル
+   ========================================= */
+
+/* 1. モーダルの背景（暗幕） */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.5); /* 半透明の黒 */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999; /* 最前面 */
+    
+    opacity: 1;
+    transition: opacity 0.3s;
+}
+
+/* 隠すとき用クラス */
+.modal-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+}
+
+/* 2. モーダルの中身（白い箱） */
+.modal-content {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    width: 300px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    text-align: center;
+    transform: translateY(0);
+    transition: transform 0.3s;
+}
+
+.modal-overlay.hidden .modal-content {
+    transform: translateY(-20px); /* ふわっと消える演出 */
+}
+
+.modal-content h3 {
+    margin-top: 0;
+    color: #555;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+/* 設定項目の行 */
+.setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 20px 0;
+    font-size: 16px;
+    color: #333;
+}
+
+.modal-actions {
+    margin-top: 20px;
+}
+
+/* 3. iOS風トグルスイッチ */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px; width: 18px;
+    left: 4px; bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #0984e3; /* ONの色（青） */
+}
+
+input:focus + .slider {
+    box-shadow: 0 0 1px #0984e3;
+}
+
+input:checked + .slider:before {
+    transform: translateX(24px);
+}
+
+/* 負の数モードなどがONになっている時の見た目 */
+.btn-create.active,
+.btn-func.active {
+    background-color: #ffe082; /* 薄いオレンジ/黄色系でハイライト */
+    color: #333;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); /* 凹んだ感じ */
+    transform: translateY(1px); /* 少し沈む */
+    border-color: #ffca28;
+}
+
+
+/* ====== 追加: モーダル内のヘルプデザイン ====== */
+.modal-divider {
+    border: 0;
+    border-top: 1px solid #ddd;
+    margin: 20px 0;
+}
+
+.help-section h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #555;
+    font-size: 1rem;
+}
+
+.help-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.help-list li {
+    margin-bottom: 12px;
+    line-height: 1.4;
+    background: #f9f9f9;
+    padding: 8px;
+    border-radius: 6px;
+    border-left: 4px solid #aaa;
+}
+
+.help-list strong {
+    color: #333;
+    display: block; /* 改行させる */
+    margin-bottom: 2px;
+}
+
+/* ====== style.css : フォーカス移動ヒント（矢印）のデザイン [改訂版] ====== */
+
+/* 基本設定: 
+   .show-nav-hints (設定ON) のとき、
+   .focused (フォーカス中) のスロットに矢印を出す 
+*/
+.show-nav-hints .card-slot.focused::after {
+    /* ど真ん中に配置！ */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%); /* 中心合わせ */
+    
+    /* 大きく、でも文字の邪魔にならない「透かし」スタイル */
+    font-size: 26px;     /* ガツンと大きく！ */
+    color: #000;         /* 色は黒ベースだけど... */
+    opacity: 0.15;       /* 透明度を上げて、背景に溶け込ませる */
+    
+    font-weight: 900;    /* 太字で強調 */
+    line-height: 1.1;    /* 行間を詰める（縦並び用） */
+    text-align: center;  /* 文字自体も中央寄せ */
+    pointer-events: none;/* クリックの邪魔にならないように */
+    white-space: pre;    /* 改行コード(\A)を使えるようにする */
+    z-index: 0;          /* 数字カードの下（背景）に敷く */
+}
+
+/* --- A. 分数コンテナのヒント --- */
+
+/* 分母: 上(↑) と 左(←) */
+.show-nav-hints .container-fraction > .fraction-part > .denominator.focused::after {
+    content: "↑\A←";     /* \A で改行して縦積み */
+}
+
+/* 分子: 下(↓) と 左(←) */
+.show-nav-hints .container-fraction > .fraction-part > .numerator.focused::after {
+    content: "↓\A←";
+}
+
+/* 整数(帯分数): 右(→) */
+.show-nav-hints .container-fraction > .integer-part.focused::after {
+    content: "→";
+}
+
+/* --- B. √コンテナのヒント --- */
+
+/* 係数: 右(→) */
+.show-nav-hints .container-sqrt > .coefficient-part.focused::after {
+    content: "→";
+}
+
+/* ルートの中身: 左(←) */
+.show-nav-hints .container-sqrt > .sqrt-border-top.focused::after {
+    content: "←";
+}
+
+/* ====== ドラッグスクロール用のスタイル追加 ====== */
+
+/* JavaScriptでドラッグ中（mousedown）にこのクラスを付与します。
+   通常時は何も指定しないので、ブラウザ標準の「矢印」になります。
+*/
+.is-dragging {
+    cursor: grabbing;          /* 標準の「握った手」 */
+    cursor: -webkit-grabbing;  /* Webkit系ブラウザ用 */
+    user-select: none;         /* ドラッグ中に文字などが選択されないようにする */
+}
+
+/* ====== 待機エリア内の親子分離禁止設定 ====== */
+
+/* 1. コンテナの中に入っている「子供のカード」はマウスに反応させない */
+/* これにより、子供をクリックしても「親」をクリックした扱いになります */
+#wait-area .math-card .math-card {
+    pointer-events: none;
+}
+
+/* 2. スロット（穴）もマウスに反応させない */
+/* これで、スロットの余白部分を掴んでも、親が反応します */
+#wait-area .math-card .card-slot {
+    pointer-events: none;
+}
+
+/* ※注意: 親コンテナ自身（#wait-area直下の.math-card）は
+   引き続き pointer-events: auto (通常) なので、ちゃんと掴んで動かせます！ */
