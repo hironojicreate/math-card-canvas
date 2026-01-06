@@ -269,6 +269,7 @@ const CardMaker = {
         
         return elements;
     },
+
     // Surd (coeff * √root * vars) をカード要素に変換
     surdToElements(surd, isFirstTerm) {
         const elems = [];
@@ -288,8 +289,8 @@ const CardMaker = {
         }
 
         // --- 係数部分の表示判断 ---
-        // 「1x」「-1√2」のように、後ろに何かある時は「1」を省略するルール
         let showCoeff = true;
+        // 「1x」「-1√2」のように、後ろに何かある時は「1」を省略するルール
         if (absCoeff.n === 1 && absCoeff.d === 1) {
             if (hasVars || hasRoot) {
                 showCoeff = false; // 1を隠す
@@ -297,18 +298,74 @@ const CardMaker = {
         }
 
         if (showCoeff) {
+             // ★ここが大改造ポイント！ モードによって分数の姿を変えるわ！
              if (absCoeff.d === 1) {
-                 // 整数
+                 // 整数ならそのまま
                  elems.push(new MathCard('number', absCoeff.n.toString(), 0, 0).element);
              } else {
-                 // 分数
-                 const fracCard = new MathCard('structure', '分数', 0, 0).element;
-                 this.fillFraction(fracCard, absCoeff);
-                 elems.push(fracCard);
+                 // 分数の場合: モードチェック！
+                 // ただし、ルートや変数がついている場合（例: 1/2 x）は、小数や余りにはしないのが普通。
+                 // 「純粋な分数（数字だけ）」の時のみ、変換を発動させるわ。
+                 const isPureNumber = !hasVars && !hasRoot;
+                 const mode = App.state.displayMode;
+
+                 if (isPureNumber && mode === 'decimal') {
+                     // 【小数モード】
+                     const decimalVal = absCoeff.n / absCoeff.d;
+                     let strVal = decimalVal.toString();
+                     
+                     // ★追加機能: 桁数オーバーならカットして「…」をつける
+                     const MAX_LEN = 10; // 最大10文字まで許容（お好みで調整してね）
+                     
+                     if (strVal.length > MAX_LEN) {
+                         // 1. 指定文字数でバッサリ切る
+                         let displayVal = strVal.substring(0, MAX_LEN);
+                         
+                         // 2. もし末尾が「.」で終わってたら、それも消す（"123." → "123"）
+                         if (displayVal.endsWith('.')) {
+                             displayVal = displayVal.slice(0, -1);
+                         }
+
+                         // 3. 数字カードと「…」カードを生成
+                         elems.push(new MathCard('number', displayVal, 0, 0).element);
+                         elems.push(new MathCard('operator', '…', 0, 0).element); 
+                     } else {
+                         // 短い（割り切れてる、または桁が少ない）ならそのまま表示
+                         elems.push(new MathCard('number', strVal, 0, 0).element);
+                     }
+
+                 } else if (isPureNumber && mode === 'remainder') {
+                     // 【あまりモード】 5/2 -> 2...1 ??? 
+                     // ちょっと待って。約分されて 5/2 になってるけど、元が 10/4 だったかもしれない情報が消えてるわ。
+                     // でも Fraction クラスは既約分数になっちゃうから、ここから「あまり」を復元するのは実は不可能なの...！
+                     // 
+                     // ★緊急策: ここでは「仮分数」を「帯分数」っぽく扱うか、
+                     // 「分子 ÷ 分母」の商と余りを出す形にするわ。 (5÷2 = 2あまり1)
+                     
+                     const quotient = Math.floor(absCoeff.n / absCoeff.d);
+                     const remainder = absCoeff.n % absCoeff.d;
+                     
+                     // 商 (2)
+                     elems.push(new MathCard('number', quotient.toString(), 0, 0).element);
+                     
+                     // ... (あまり記号) ※とりあえず三点リーダーで代用、あとで専用画像にしてもいいかも
+                     const dotCard = new MathCard('operator', 'あまり', 0, 0).element; 
+                     // dotCard.style.color = '#ccc'; // 色はお好みで
+                     elems.push(dotCard);
+                     
+                     // 余り (1)
+                     elems.push(new MathCard('number', remainder.toString(), 0, 0).element);
+
+                 } else {
+                     // 【分数モード】 または 【変換不可(変数付きなど)】 -> 通常の分数コンテナ
+                     const fracCard = new MathCard('structure', '分数', 0, 0).element;
+                     this.fillFraction(fracCard, absCoeff);
+                     elems.push(fracCard);
+                 }
              }
         }
 
-        // --- ルート部分 ---
+        // --- ルート部分 (そのまま) ---
         if (hasRoot) {
             const sqrtCard = new MathCard('operator', '√', 0, 0).element;
             const contentSlot = sqrtCard.querySelector('.sqrt-border-top');
@@ -321,45 +378,27 @@ const CardMaker = {
             elems.push(sqrtCard);
         }
 
-        // --- 変数部分 ---
-        // {x:1, y:2} -> x, y, y ... 今は単純に並べる（べき乗コンテナはまだ使わず）
-        // 中学生レベルなら x*x を x^2 にするより、まずは x x と並べるか、
-        // あるいは x のカードを出すか。
-        // 今回は「x」カードをそのまま出すわ！(指数はとりあえず無視して、個数分出す？)
-        // いえ、まずはシンプルに「x」を1枚出すことから始めましょう。
-        
-
+        // --- 変数部分 (そのまま) ---
         varKeys.forEach(key => {
             const power = surd.vars[key];
-            
             if (power === 1) {
-                // 1乗なら、そのまま「変数カード」を1枚ポンと置く
                 const varCard = new MathCard('variable', key, 0, 0).element;
                 elems.push(varCard);
             } else {
-                // 2乗以上なら、「べき乗コンテナ」を作って収納する！
                 const powerCardObj = new MathCard('power', 'Power', 0, 0);
                 const powerEl = powerCardObj.element;
-                
-                // 中身を入れるスロットを探す
                 const baseSlot = powerEl.querySelector('.base-slot');
                 const expSlot = powerEl.querySelector('.exponent-slot');
-                
                 if (baseSlot && expSlot) {
-                    // 1. 底（x）を入れる
                     const baseCard = new MathCard('variable', key, 0, 0).element;
                     baseSlot.appendChild(baseCard);
-                    // スタイル調整（static配置）
                     baseCard.style.position = 'static';
                     baseCard.style.transform = 'scale(0.9)';
-                    
-                    // 2. 指数（2とか3）を入れる
                     const expCard = new MathCard('number', power.toString(), 0, 0).element;
                     expSlot.appendChild(expCard);
                     expCard.style.position = 'static';
                     expCard.style.transform = 'scale(0.9)';
                 }
-                
                 elems.push(powerEl);
             }
         });
@@ -523,8 +562,50 @@ const App = {
 
             this.updateDisplayButtonLabel();
             this.log(`Display Mode: ${this.state.displayMode}`);
-            
-            // ★重要: もし計算済みの結果を選択中なら、その場で再描画したいわね（これは後で実装）
+
+            // ====== 選択中の答えカードがあれば、その場で書き換える！ ======
+            if (this.state.activeSlot) {
+                // 選択中のスロットの親（行コンテナ）を探す
+                const container = this.state.activeSlot.closest('.container-root');
+                
+                // その行に「計算データ(_resultNodes)」が隠されているかチェック
+                if (container && container._resultNodes) {
+                    this.log("Re-rendering answer...");
+                    
+                    const slot = container.querySelector('.root-slot');
+                    
+                    // 1. 中身を一度クリア（＝も消えちゃうけど、また作るからOK）
+                    slot.innerHTML = '';
+                    
+                    // 2. 「＝」カードを再生成
+                    const equalCard = new MathCard('operator', '=', 0, 0).element;
+                    equalCard.style.color = '#e25c4a';
+                    equalCard.style.position = 'static';
+                    equalCard.style.transform = 'scale(0.9)';
+                    equalCard.style.margin = '0 4px';
+                    slot.appendChild(equalCard);
+
+                    // 3. データの保存庫から取り出して、今のモードでカードを作り直す
+                    // (CardMakerはすでに最新のモードを見るようになっているわ！)
+                    const newElements = CardMaker.createFromNodes(container._resultNodes);
+                    
+                    newElements.forEach(elem => {
+                        slot.appendChild(elem);
+                        elem.style.position = 'static';
+                        elem.style.transform = 'scale(0.9)';
+                        elem.style.margin = '0 2px';
+                    });
+
+                    // 4. フォーカスを戻してあげる（親切設計）
+                    this.focusInitialSlot(container);
+                    
+                    // 5. 幅が変わったかもしれないので位置調整（右揃え維持）
+                    // ここは少し高度だけど、親コンテナの幅が変わるとズレる可能性があるの。
+                    // 完璧を目指すなら、generateNextStepの時の「右揃えロジック」をここでもやる必要があるけど、
+                    // まずは「中身が変わる」ことを確認できればOKよ！
+                }
+            }
+            // ================================================================
         };
     },
 
@@ -1079,6 +1160,7 @@ const App = {
         // ★ポイント: X座標は一旦適当(0)で作っておくの。
         // 中身を入れて幅が決まってから、正しい位置にズラすわ！
         const newRootCard = new MathCard('root', 'Root', 0, newY);
+        newRootCard.element._resultNodes = result.nodes;
         field.appendChild(newRootCard.element);
         
         // 5. 中身を埋める (Generate)
