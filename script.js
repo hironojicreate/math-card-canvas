@@ -1895,7 +1895,7 @@ if (container.classList.contains('container-fraction')) {
         // bodyへ移動
         document.body.appendChild(element); 
         
-        element.style.position = 'absolute';
+        element.style.position = 'fixed';
         element.style.margin = '0';
         element.style.zIndex = '9999'; 
 
