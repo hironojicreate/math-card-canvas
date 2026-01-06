@@ -334,26 +334,24 @@ const CardMaker = {
                          elems.push(new MathCard('number', strVal, 0, 0).element);
                      }
 
-                 } else if (isPureNumber && mode === 'remainder') {
-                     // 【あまりモード】 5/2 -> 2...1 ??? 
-                     // ちょっと待って。約分されて 5/2 になってるけど、元が 10/4 だったかもしれない情報が消えてるわ。
-                     // でも Fraction クラスは既約分数になっちゃうから、ここから「あまり」を復元するのは実は不可能なの...！
-                     // 
-                     // ★緊急策: ここでは「仮分数」を「帯分数」っぽく扱うか、
-                     // 「分子 ÷ 分母」の商と余りを出す形にするわ。 (5÷2 = 2あまり1)
+                     } else if (isPureNumber && mode === 'remainder') {
+                     // 【あまりモード】
                      
-                     const quotient = Math.floor(absCoeff.n / absCoeff.d);
-                     const remainder = absCoeff.n % absCoeff.d;
+                     // ★修正: 記憶があればそれを使う！なければ今の値を使う
+                     const num = (surd.coeff.on !== undefined) ? surd.coeff.on : absCoeff.n;
+                     const den = (surd.coeff.od !== undefined) ? surd.coeff.od : absCoeff.d;
+
+                     const quotient = Math.floor(num / den);
+                     const remainder = num % den;
                      
                      // 商 (2)
                      elems.push(new MathCard('number', quotient.toString(), 0, 0).element);
                      
-                     // ... (あまり記号) ※とりあえず三点リーダーで代用、あとで専用画像にしてもいいかも
+                     // あまり記号
                      const dotCard = new MathCard('operator', 'あまり', 0, 0).element; 
-                     // dotCard.style.color = '#ccc'; // 色はお好みで
                      elems.push(dotCard);
                      
-                     // 余り (1)
+                     // 余り (2)
                      elems.push(new MathCard('number', remainder.toString(), 0, 0).element);
 
                  } else {

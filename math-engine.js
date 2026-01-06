@@ -15,6 +15,8 @@ class Fraction {
         this.s = (numerator * denominator < 0) ? -1 : 1;
         this.n = Math.abs(numerator);
         this.d = Math.abs(denominator);
+        this.on = this.n;
+        this.od = this.d;
         this.reduce();
     }
     reduce() {
@@ -198,19 +200,20 @@ class Poly {
         const groups = {};
         
         for (let term of this.terms) {
-            // キー作成: "r{root}_v{変数情報}"
-            // 例: 2x -> "r1_vx1"
-            // 例: 3√2 -> "r2_v"
             let varKey = Object.keys(term.vars).sort().map(k => `${k}${term.vars[k]}`).join("_");
             const key = `r${term.root}_v${varKey}`;
 
             if (!groups[key]) {
                 groups[key] = {
-                    baseTerm: term, // ベースとなる項の情報を保存（係数以外）
-                    totalCoeff: new Fraction(0)
+                    baseTerm: term,
+                    // ★修正: 0から足すのではなく、最初の項を「そのまま」使う！
+                    // これで Fraction オブジェクトが再生成されず、on/od の記憶が保たれるわ。
+                    totalCoeff: term.coeff 
                 };
+            } else {
+                // 2つ目以降は足し合わせる（この場合は記憶が消えても仕方ない＝計算結果だから）
+                groups[key].totalCoeff = groups[key].totalCoeff.add(term.coeff);
             }
-            groups[key].totalCoeff = groups[key].totalCoeff.add(term.coeff);
         }
 
         // グループごとに項を再生成
