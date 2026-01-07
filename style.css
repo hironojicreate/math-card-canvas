@@ -214,6 +214,20 @@ button:hover { background-color: #f0f0f0; }
 .btn-root   { background-color: #9b59b6; color: #fff; border-color: #8e44ad; }
 .btn-root:hover { background-color: #8e44ad; }
 
+/* 2行表示ボタン用のスタイル */
+.btn-multiline {
+    font-size: 13px;       /* 文字を少し小さく */
+    line-height: 1.3;      /* 行間を調整 */
+    white-space: pre-line; /* HTML内の改行コードや<br>を有効にする */
+    padding: 2px;          /* パディングを少し詰める */
+}
+
+/* 表示切替ボタンも2行に対応させる */
+#btn-toggle-display {
+    font-size: 13px;
+    line-height: 1.3;
+}
+
 
 /* ====== カード（Card）のデザイン ====== */
 .math-card {
@@ -222,8 +236,8 @@ button:hover { background-color: #f0f0f0; }
     justify-content: center; 
     align-items: center;
     /* width: 60px; height: 80px;  ← これを削除または auto で上書きできるようにする */
-    min-width: 60px; /* 最小サイズにする */
-    min-height: 80px;
+    min-width: 50px; /* 最小サイズにする */
+    min-height: 70px;
     background-color: #fff;
     border: 2px solid #333; 
     border-radius: 8px;
@@ -241,9 +255,17 @@ button:hover { background-color: #f0f0f0; }
 
 /* 数字カード：枠線を透明にする */
 .card-number { 
-    border-color: transparent; /* ← ここを変更！(#4a90e2 から transparent へ) */
+    border-color: transparent; 
     color: #4a90e2; 
     background-color: #ffffff; 
+
+    /* ★教科書体化 & サイズアップ */
+    font-family: "Times New Roman", "YuMincho", "Hiragino Mincho ProN", serif;
+    font-size: 40px;     /* 文字を大きく！ */
+    font-weight: normal; /* 太字をやめて、教科書のようなスッキリした太さに */
+    
+    /* 位置調整（フォントが変わると少しズレて見えることがあるので） */
+    padding-bottom: 2px;
 }
 
 /* 1. 定数ボタン（π, i）を目立たせるスタイル（黄色系で少しリッチに） */
@@ -265,47 +287,54 @@ button:hover { background-color: #f0f0f0; }
     color: #00b894; /* ボタンと同じ緑系 */
     background-color: #ffffff;
     
-    /* ★サイズを演算子と同じにする魔法 */
+    /* カードの物理サイズは固定（変更なし） */
     min-width: 45px !important;
     width: 45px !important;
     min-height: 45px !important;
     height: 45px !important;
     
-    font-size: 20px;
+    /* ★ここが大改造ポイント！ 数学的なフォント設定 */
+    font-family: "Times New Roman", "YuMincho", "Hiragino Mincho ProN", serif;
+    font-weight: normal; /* 太字だと潰れるのでノーマルに戻す */
+    font-style: italic;  /* 数学の変数は斜体が基本！ */
+    font-size: 28px;     /* ゴシックより線が細いので、思い切って大きく！ */
     
+    /* 中央揃え */
     display: inline-flex;
     justify-content: center;
     align-items: center;
     margin: 0 4px;
     align-self: center;
+    
+    /* イタリック体にすると少し右に重心が寄るので、微調整 */
+    padding-right: 2px;
+    padding-bottom: 2px; /* ベースライン調整 */
 }
 
 /* 演算子カード：枠線を透明にする */
-/* 演算子カード：正方形で小さく、リズムを作る */
+
 .card-operator { 
-    /* 色設定（さっき変えたところ） */
     border-color: transparent; 
     color: #e25c4a; 
     background-color: #ffffff; 
     
-    /* ★ここが変更ポイント！サイズを強制的に正方形にする */
-    min-width: 45px !important;   /* 幅を狭く */
-    width: 45px !important;       /* 固定幅 */
+    /* サイズ固定設定（前回変えたところ） */
+    min-width: 45px !important;
+    width: 45px !important;
+    min-height: 45px !important;
+    height: 45px !important;
     
-    min-height: 45px !important;  /* 高さを低く */
-    height: 45px !important;      /* 固定高さ */
+    /* ★教科書体化 */
+    font-family: "Times New Roman", "YuMincho", "Hiragino Mincho ProN", serif;
+    font-size: 24px;     /* 記号は少し控えめなサイズが上品 */
+    font-weight: bold;
     
-    /* 文字サイズもほんの少し小さくしてバランスを取る？（お好みで！） */
-    font-size: 20px; 
-    
-    /* 中央揃えの念押し */
     display: inline-flex;
     justify-content: center;
     align-items: center;
     
-    /* 上下のマージンを少し調整して、数字カード（背が高い）の真ん中に来るように */
     margin: 0 4px; 
-    align-self: center; /* Flexbox内で上下中央に配置 */
+    align-self: center;
 }
 
 /* ====== カメレオン機能：負の符号としてのマイナス ====== */
@@ -399,6 +428,8 @@ button:hover { background-color: #f0f0f0; }
     /* margin: 2px; ← 既存のこれはそのままでOKかも確認 */
     transition: all 0.2s; /* アニメーションを滑らかに */
     flex-shrink: 0;
+    pointer-events: auto;
+
 }
 
 /* フォーカスがあたっているスロット */
@@ -444,7 +475,8 @@ button:hover { background-color: #f0f0f0; }
     background-color: #fff; /* 背景は白 */
     border: 1px solid #ddd; /* 薄いグレーの枠線 */
     border-radius: 4px;     /* 角丸 */
-    padding: 4px;           /* 余白 */
+    padding: 4px;           /* 基本の余白 */
+    padding-bottom: 14px;   /* ★下だけ広く！これでiPadでも掴みやすくなるはず */
     
     /* サイズ制限は自動 */
     width: auto !important;
@@ -480,8 +512,47 @@ button:hover { background-color: #f0f0f0; }
     padding: 0;
     margin: 0;
     
-    min-width: 40px;
-    min-height: 50px;
+    min-width: 50px;
+    min-height: 70px;
+}
+
+/* エラーカード（0ではわれません） */
+.card-error {
+    background-color: #ffdde1; /* 優しいピンク */
+    color: #e17055;            /* 文字は少し濃い赤オレンジ */
+    border: 2px solid #fab1a0; /* 枠線もピンク系 */
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+    
+    /* 改行を反映させるための重要設定 */
+    white-space: pre-line; 
+    line-height: 1.4;
+    
+    min-width: 80px;
+    height: auto;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    
+    /* マウス操作の挙動は他のカードと同じに */
+    cursor: grab;
+    user-select: none;
+    margin: 0 4px;
+}
+
+/* 「あまり」カード用：幅制限を解除して横長にする */
+.card-remainder {
+    width: auto !important;       /* 固定幅45pxを解除 */
+    min-width: 45px !important;   /* 最低ラインは保つ */
+    padding: 0 10px;              /* 文字が詰まらないように余白 */
+    font-size: 16px;              /* 文字サイズを少し調整して読みやすく */
+    white-space: nowrap;          /* 絶対に改行させない強い意志 */
+    letter-spacing: 1px;          /* 文字間を少し空けて見やすく */
 }
 
 /* --- 分数コンテナ（帯分数対応版） --- */
@@ -711,11 +782,6 @@ button:hover { background-color: #f0f0f0; }
 {
     /* pointer-events: none;  ← これを削除！ */
     cursor: grab; /* 掴めるよ、というカーソルにする */
-}
-
-/* 2. でも、中にある「スロット」はちゃんと反応させる */
-.card-slot {
-    pointer-events: auto;
 }
 
 /* 3. ドラッグ用のハンドルも反応させる（これがないと動かせなくなる！） */

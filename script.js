@@ -120,12 +120,30 @@ createDOM() {
         el.appendChild(rightSym);
         
     } else {
+
         // 数字・記号・変数
-        if (this.type === 'number') el.classList.add('card-number');
-        else if (this.type === 'operator') el.classList.add('card-operator');
-        else if (this.type === 'variable') el.classList.add('card-variable');
-        el.innerText = this.value;
+            if (this.type === 'number') el.classList.add('card-number');
+            
+            // ★ここを書き換え
+            else if (this.type === 'operator') {
+                el.classList.add('card-operator');
+                
+                // 特例：「あまり」という文字なら、横長クラスを追加！
+                if (this.value === 'あまり') {
+                    el.classList.add('card-remainder');
+                }
+            }
+            
+            else if (this.type === 'variable') el.classList.add('card-variable');
+            el.innerText = this.value;
     }
+
+
+    // ★ここに追加
+        if (this.type === 'error') {
+            el.classList.add('card-error');
+            el.innerText = this.value; // "0では\nわれません"
+        }
 
     // ★ハンドル追加コードは削除済み
 
@@ -225,27 +243,22 @@ createDOM() {
 
 }
 
-// script.js の冒頭付近、Appオブジェクトの前に追加
 
 // ====== CardMaker (DOM工場) ======
 const CardMaker = {
     // ノードリスト(Array of Poly/Operator)を受け取り、カード要素の配列を返す
+
 
     createFromNodes(nodes) {
         const elements = [];
         
         nodes.forEach(node => {
             if (node instanceof Poly) {
-                // (省略: Polyの処理)
+                // (Polyの処理は既存のまま)
                 node.terms.forEach((term, index) => {
                     if (index > 0) {
                         const opVal = term.coeff.s >= 0 ? '+' : '-';
                         elements.push(new MathCard('operator', opVal, 0, 0).element);
-                    } else {
-                        if (term.coeff.s < 0) {
-                             const minusCard = new MathCard('operator', '-', 0, 0).element;
-                             elements.push(minusCard);
-                        }
                     }
                     const termElems = this.surdToElements(term, index === 0);
                     elements.push(...termElems);
@@ -254,58 +267,113 @@ const CardMaker = {
             else if (node.type === 'operator') {
                 elements.push(new MathCard('operator', node.value, 0, 0).element);
             }
-            // ★これがあるか確認！
             else if (node.type === 'number') {
                 elements.push(new MathCard('number', node.value.toString(), 0, 0).element);
             }
-            // ★これがあるか確認！
             else if (node.type === 'variable') {
                 elements.push(new MathCard('variable', node.value, 0, 0).element);
+            }
+            // ★追加: 生の構造データ(Structure)が来ても表示できるようにする！
+            else if (node.type === 'structure') {
+                if (node.subType === 'fraction') {
+                    // 分数の器を作る
+                    const fracCard = new MathCard('structure', '分数', 0, 0).element;
+                    
+                    // 中身（分子・分母）を再帰的に作る！
+                    // ここがミソ。「8 + 6」みたいなリストをもう一度 createFromNodes に通すの。
+                    const numElems = this.createFromNodes(node.numerator);
+                    const denElems = this.createFromNodes(node.denominator);
+                    
+                    // スロットに入れる
+                    const numSlot = fracCard.querySelector('.numerator');
+                    const denSlot = fracCard.querySelector('.denominator');
+                    
+                    numElems.forEach(el => {
+                        el.style.position = 'static'; el.style.transform = 'scale(0.9)'; el.style.margin = '0 2px';
+                        numSlot.appendChild(el);
+                    });
+                    denElems.forEach(el => {
+                        el.style.position = 'static'; el.style.transform = 'scale(0.9)'; el.style.margin = '0 2px';
+                        denSlot.appendChild(el);
+                    });
+                    
+                    elements.push(fracCard);
+                }
+                // 必要なら他の構造(sqrtなど)もここに追加できるわ
             }
             else {
                 console.warn("Unknown node type in CardMaker:", node);
             }
+
+            if (node.type === 'error') {
+                const errCard = new MathCard('error', node.value, 0, 0).element;
+                elements.push(errCard);
+            }
+
         });
         
         return elements;
     },
-
+ 
     // Surd (coeff * √root * vars) をカード要素に変換
+
     surdToElements(surd, isFirstTerm) {
         const elems = [];
         
-        // 係数の絶対値
-        const absCoeff = new Fraction(Math.abs(surd.coeff.n), surd.coeff.d);
+        // 自動約分阻止 (false) はそのまま！
+        const absCoeff = new Fraction(Math.abs(surd.coeff.n), surd.coeff.d, false);
         
-        // 変数があるか？
+        // 変数やルートがあるかチェック
         const varKeys = Object.keys(surd.vars).sort();
         const hasVars = varKeys.length > 0;
         const hasRoot = surd.root !== 1;
 
+        // ★新ロジック: マイナスを数字カードに合体させるか判定
+        // 条件: 
+        // 1. 先頭の項である (isFirstTerm)
+        // 2. 係数がマイナスである (surd.coeff.s < 0)
+        // 3. 分母が1の整数である (absCoeff.d === 1)
+        // 4. 変数やルートがない単純な数である (!hasVars && !hasRoot)
+        const isPureInteger = (absCoeff.d === 1 && !hasVars && !hasRoot);
+        const shouldMergeSign = (isFirstTerm && surd.coeff.s < 0 && isPureInteger);
+
         // --- 符号の処理 ---
-        if (isFirstTerm && surd.coeff.s < 0) {
+        // 先頭のマイナス、かつ「マージしない」場合だけ、独立した演算子カードを作る
+        // (つまり、マージする場合はここではカードを作らない！)
+        if (isFirstTerm && surd.coeff.s < 0 && !shouldMergeSign) {
             const minusCard = new MathCard('operator', '-', 0, 0).element;
             elems.push(minusCard);
         }
 
         // --- 係数部分の表示判断 ---
         let showCoeff = true;
-        // 「1x」「-1√2」のように、後ろに何かある時は「1」を省略するルール
         if (absCoeff.n === 1 && absCoeff.d === 1) {
             if (hasVars || hasRoot) {
-                showCoeff = false; // 1を隠す
+                showCoeff = false; // 1x, 1√2 などの1は隠す
             }
         }
+        
+        // ★特例: マイナス1の場合 (-1x) は、マージしないなら符号は上で出ているので、数字の1は隠す
+        // でもマージする場合(-1)は、数字カードとして「-1」を出さなきゃいけないから showCoeff = true に戻す
+        if (shouldMergeSign && absCoeff.n === 1) {
+            showCoeff = true;
+        }
+
 
         if (showCoeff) {
-             // ★ここが大改造ポイント！ モードによって分数の姿を変えるわ！
              if (absCoeff.d === 1) {
-                 // 整数ならそのまま
-                 elems.push(new MathCard('number', absCoeff.n.toString(), 0, 0).element);
+                 // === 整数の場合 ===
+                 let valStr = absCoeff.n.toString();
+                 
+                 // ★ここでマージ実行！数字の前にマイナスをつける
+                 if (shouldMergeSign) {
+                     valStr = "-" + valStr;
+                 }
+                 
+                 elems.push(new MathCard('number', valStr, 0, 0).element);
              } else {
-                 // 分数の場合: モードチェック！
-                 // ただし、ルートや変数がついている場合（例: 1/2 x）は、小数や余りにはしないのが普通。
-                 // 「純粋な分数（数字だけ）」の時のみ、変換を発動させるわ。
+                 // === 分数の場合 ===
+                 // (ここに変更はないけれど、前回追加した displayMode のロジックは維持してね)
                  const isPureNumber = !hasVars && !hasRoot;
                  const mode = App.state.displayMode;
 
@@ -313,57 +381,66 @@ const CardMaker = {
                      // 【小数モード】
                      const decimalVal = absCoeff.n / absCoeff.d;
                      let strVal = decimalVal.toString();
-                     
-                     // ★追加機能: 桁数オーバーならカットして「…」をつける
-                     const MAX_LEN = 10; // 最大10文字まで許容（お好みで調整してね）
-                     
+                     const MAX_LEN = 10;
                      if (strVal.length > MAX_LEN) {
-                         // 1. 指定文字数でバッサリ切る
                          let displayVal = strVal.substring(0, MAX_LEN);
-                         
-                         // 2. もし末尾が「.」で終わってたら、それも消す（"123." → "123"）
-                         if (displayVal.endsWith('.')) {
-                             displayVal = displayVal.slice(0, -1);
-                         }
-
-                         // 3. 数字カードと「…」カードを生成
+                         if (displayVal.endsWith('.')) displayVal = displayVal.slice(0, -1);
                          elems.push(new MathCard('number', displayVal, 0, 0).element);
                          elems.push(new MathCard('operator', '…', 0, 0).element); 
                      } else {
-                         // 短い（割り切れてる、または桁が少ない）ならそのまま表示
                          elems.push(new MathCard('number', strVal, 0, 0).element);
                      }
-
-                     } else if (isPureNumber && mode === 'remainder') {
+                 } else if (isPureNumber && mode === 'remainder') {
                      // 【あまりモード】
-                     
-                     // ★修正: 記憶があればそれを使う！なければ今の値を使う
                      const num = (surd.coeff.on !== undefined) ? surd.coeff.on : absCoeff.n;
                      const den = (surd.coeff.od !== undefined) ? surd.coeff.od : absCoeff.d;
-
                      const quotient = Math.floor(num / den);
                      const remainder = num % den;
-                     
-                     // 商 (2)
                      elems.push(new MathCard('number', quotient.toString(), 0, 0).element);
-                     
-                     // あまり記号
-                     const dotCard = new MathCard('operator', 'あまり', 0, 0).element; 
-                     elems.push(dotCard);
-                     
-                     // 余り (2)
+                     elems.push(new MathCard('operator', 'あまり', 0, 0).element); 
                      elems.push(new MathCard('number', remainder.toString(), 0, 0).element);
-
                  } else {
-                     // 【分数モード】 または 【変換不可(変数付きなど)】 -> 通常の分数コンテナ
+                     // 【分数モード】 
                      const fracCard = new MathCard('structure', '分数', 0, 0).element;
-                     this.fillFraction(fracCard, absCoeff);
+                     
+                     // ★変更: ここで「仮分数 vs 帯分数」の判定を行う！
+                     
+                     // 1. 変数などがついていない純粋な分数か？
+                     const isPure = !hasVars && !hasRoot;
+                     
+                     // 2. モードが「帯分数」で、かつ分子が分母より大きい（仮分数である）か？
+                     // (注: 分母が1の場合は上で「整数」として処理されているのでここには来ない)
+                     if (isPure && App.state.fractionMode === 'mixed' && absCoeff.n > absCoeff.d) {
+                         // === 帯分数化ロジック ===
+                         const integerPart = Math.floor(absCoeff.n / absCoeff.d);
+                         const remainderNum = absCoeff.n % absCoeff.d;
+
+                         // 整数部分をセット
+                         const intSlot = fracCard.querySelector('.integer-part');
+                         if (intSlot && integerPart > 0) {
+                             const intCard = new MathCard('number', integerPart.toString(), 0, 0).element;
+                             intCard.style.position = 'static';
+                             intCard.style.transform = 'scale(0.9)';
+                             intSlot.appendChild(intCard);
+                         }
+
+                         // 分数部分（真分数）をセット
+                         // 分子が0になることは通常ないけど（d=1で弾かれるから）、念のためFractionを作る
+                         const newFrac = new Fraction(remainderNum, absCoeff.d, false);
+                         this.fillFraction(fracCard, newFrac);
+
+                     } else {
+                         // === 通常（仮分数）ロジック ===
+                         // そのまま入れる
+                         this.fillFraction(fracCard, absCoeff);
+                     }
+
                      elems.push(fracCard);
                  }
              }
         }
 
-        // --- ルート部分 (そのまま) ---
+        // --- ルート部分 ---
         if (hasRoot) {
             const sqrtCard = new MathCard('operator', '√', 0, 0).element;
             const contentSlot = sqrtCard.querySelector('.sqrt-border-top');
@@ -376,7 +453,7 @@ const CardMaker = {
             elems.push(sqrtCard);
         }
 
-        // --- 変数部分 (そのまま) ---
+        // --- 変数部分 ---
         varKeys.forEach(key => {
             const power = surd.vars[key];
             if (power === 1) {
@@ -433,8 +510,9 @@ const App = {
         configAutoResetNegative: true, // [New] 設定: 入力確定後に負の数モードを解除するか
         configShowHints: true,  // ヒントを表示するかどうか
         configShowInfo: false,  // 情報ウィンドウを表示するかどうか
-        appMode: 'arithmetic',  // ★追加: アプリのモード ('arithmetic' か 'math')
-        displayMode: 'fraction', // ★追加: 'fraction' | 'decimal' | 'remainder'
+        appMode: 'arithmetic',  //  アプリのモード ('arithmetic' か 'math')
+        displayMode: 'fraction', // 'fraction' | 'decimal' | 'remainder'
+        fractionMode: 'improper', // 分数の表示モード ('improper'=仮分数 / 'mixed'=帯分数)
         lastCommittedCard: null, // 最後に確定したカード
         lastCommitTime: 0,        // 最後に確定した時間(ミリ秒)
         activeSlot: null,        //  現在フォーカスしているスロット
@@ -531,80 +609,253 @@ const App = {
         this.updateAllMinusStyles();
         if (typeof MathEngine !== 'undefined') {
             MathEngine.init();
+            MathEngine.config.mode = this.state.appMode;
         } else {
             console.error("MathEngine not found. (math-engine.js is missing!)");
         }
         console.log("Math Card Canvas: Ready!");
     },
 
-    // 表示切替ボタンのセットアップ
+
+    // script.js : Appオブジェクトに追加・修正
+
+    // 結果カードを再描画する便利関数（表示切替時に使う）
+    refreshActiveResult() {
+        if (!this.state.activeSlot) return;
+        
+        const container = this.state.activeSlot.closest('.container-root');
+        if (container && container._resultNodes) {
+            this.log("Refreshing view...");
+            const slot = container.querySelector('.root-slot');
+            slot.innerHTML = ''; // クリア
+
+            // = を再配置
+            const equalCard = new MathCard('operator', '=', 0, 0).element;
+            equalCard.style.color = '#e25c4a';
+            equalCard.style.position = 'static';
+            equalCard.style.transform = 'scale(0.9)';
+            equalCard.style.margin = '0 4px';
+            slot.appendChild(equalCard);
+
+            // 新しい設定でカードを生成
+            const newElements = CardMaker.createFromNodes(container._resultNodes);
+            newElements.forEach(elem => {
+                slot.appendChild(elem);
+                elem.style.position = 'static';
+                elem.style.transform = 'scale(0.9)';
+                elem.style.margin = '0 2px';
+            });
+
+            this.focusInitialSlot(container);
+        }
+    },
+
+
+    // ★修正: 選択中のコンテナ内の分数だけを、今のモードに合わせて書き換える魔法
+    convertAllFractions() {
+        // 1. 選択中の場所（スロット）がないなら、誤爆防止のため何もしない
+        if (!this.state.activeSlot) {
+            this.log("Convert: Please select a container first.");
+            return;
+        }
+
+        // 2. 範囲を決める！
+        // まず、今いる場所の親玉である「式コンテナ(.container-root)」を探す
+        let scopeElement = this.state.activeSlot.closest('.container-root');
+        
+        // もし式コンテナの外（単独で置いた分数カードなど）なら、そのカード自身を対象にする
+        if (!scopeElement) {
+            scopeElement = this.state.activeSlot.closest('.container-fraction');
+        }
+
+        if (!scopeElement) {
+            this.log("Convert: No target container found.");
+            return;
+        }
+
+        // 3. その範囲内にある分数カードだけを集める
+        let targets = [];
+        
+        // 範囲自体が分数カードなら、それだけが対象
+        if (scopeElement.classList.contains('container-fraction')) {
+            targets.push(scopeElement);
+        } 
+        // 範囲の中に分数があるなら、それら全部（式コンテナの場合はこっち）
+        else {
+            targets = Array.from(scopeElement.querySelectorAll('.container-fraction'));
+        }
+
+        if (targets.length === 0) return;
+
+        // 4. まとめて変換（ロジックは前回と同じ）
+        targets.forEach(frac => {
+            const intSlot = frac.querySelector('.integer-part');
+            const numSlot = frac.querySelector('.numerator');
+            const denSlot = frac.querySelector('.denominator');
+            
+            if (!intSlot || !numSlot || !denSlot) return;
+
+            // 読み取りヘルパー
+            const readVal = (slot) => {
+                const numCard = slot.querySelector('.card-number');
+                return numCard ? parseInt(numCard.innerText) : 0;
+            };
+
+            // 変数入りは無視
+            if (frac.querySelector('.card-variable')) return;
+
+            const iVal = readVal(intSlot);
+            const nVal = readVal(numSlot);
+            const dVal = readVal(denSlot);
+
+            if (dVal === 0) return;
+
+            // 一旦すべて仮分数化 (整数 * 分母 + 分子)
+            let totalNum = iVal * dVal + nVal;
+            const currentDenom = dVal;
+
+            let newI = 0;
+            let newN = totalNum;
+            
+            // 帯分数モードなら、整数部分を分離
+            if (this.state.fractionMode === 'mixed') {
+                if (newN >= currentDenom) {
+                    newI = Math.floor(newN / currentDenom);
+                    newN = newN % currentDenom;
+                }
+            }
+
+            // カード書き換え関数
+            const updateSlot = (slot, val, isIntegerSlot) => {
+                slot.innerHTML = '';
+                const shouldShow = isIntegerSlot ? (val > 0) : true;
+
+                if (shouldShow) {
+                    const newCard = new MathCard('number', val.toString(), 0, 0);
+                    slot.appendChild(newCard.element);
+                    
+                    newCard.element.style.position = 'static';
+                    newCard.element.style.transform = 'scale(0.9)';
+                    newCard.element.style.margin = '0'; 
+                }
+            };
+            
+            updateSlot(intSlot, newI, true);
+            updateSlot(numSlot, newN, false);
+            updateSlot(denSlot, currentDenom, false);
+        });
+        
+        this.log(`Converted fractions in selection to: ${this.state.fractionMode}`);
+    },
+
+
+    // setupDisplayToggleButton (既存のものを少し修正)
+
+    // ====== script.js : setupDisplayToggleButton の書き換え ======
+
     setupDisplayToggleButton() {
         const btn = document.getElementById('btn-toggle-display');
         if (!btn) return;
 
-        // 初期表示の更新
-        this.updateDisplayButtonLabel();
+        this.updateDisplayButtonLabel(); // 初期表示
 
         btn.onclick = (e) => {
             e.stopPropagation();
+
+            // ★ 1. 今選んでいるカードは「わり算」出身かな？チェック
+            let allowRemainder = false;
             
-            // モードをローテーションさせる
-            // 分数 -> 小数 -> あまり -> 分数 ...
-            if (this.state.displayMode === 'fraction') {
+            if (this.state.activeSlot) {
+                const container = this.state.activeSlot.closest('.container-root');
+                // コンテナの中に「計算結果データ(_resultNodes)」があるか確認
+                if (container && container._resultNodes && container._resultNodes.length > 0) {
+                    const node = container._resultNodes[0];
+                    // さっきつけたタグ(opType)を見る！
+                    if (node.opType === 'div') {
+                        allowRemainder = true;
+                    }
+                }
+            }
+
+            // ★ 2. モード切替ロジック (条件分岐)
+            const current = this.state.displayMode;
+            
+            if (current === 'fraction') {
+                // 分数 → 小数 (ここは誰でもOK)
                 this.state.displayMode = 'decimal';
-            } else if (this.state.displayMode === 'decimal') {
-                this.state.displayMode = 'remainder';
-            } else {
+            } 
+            else if (current === 'decimal') {
+                // 小数 → ？？？
+                if (allowRemainder) {
+                    // わり算なら「あまり」へ
+                    this.state.displayMode = 'remainder';
+                } else {
+                    // それ以外なら「あまり」を飛ばして「分数」へ戻る！
+                    this.state.displayMode = 'fraction';
+                }
+            } 
+            else {
+                // あまり → 分数 (一周回って戻る)
                 this.state.displayMode = 'fraction';
             }
 
             this.updateDisplayButtonLabel();
-            this.log(`Display Mode: ${this.state.displayMode}`);
-
-            // ====== 選択中の答えカードがあれば、その場で書き換える！ ======
-            if (this.state.activeSlot) {
-                // 選択中のスロットの親（行コンテナ）を探す
-                const container = this.state.activeSlot.closest('.container-root');
-                
-                // その行に「計算データ(_resultNodes)」が隠されているかチェック
-                if (container && container._resultNodes) {
-                    this.log("Re-rendering answer...");
-                    
-                    const slot = container.querySelector('.root-slot');
-                    
-                    // 1. 中身を一度クリア（＝も消えちゃうけど、また作るからOK）
-                    slot.innerHTML = '';
-                    
-                    // 2. 「＝」カードを再生成
-                    const equalCard = new MathCard('operator', '=', 0, 0).element;
-                    equalCard.style.color = '#e25c4a';
-                    equalCard.style.position = 'static';
-                    equalCard.style.transform = 'scale(0.9)';
-                    equalCard.style.margin = '0 4px';
-                    slot.appendChild(equalCard);
-
-                    // 3. データの保存庫から取り出して、今のモードでカードを作り直す
-                    // (CardMakerはすでに最新のモードを見るようになっているわ！)
-                    const newElements = CardMaker.createFromNodes(container._resultNodes);
-                    
-                    newElements.forEach(elem => {
-                        slot.appendChild(elem);
-                        elem.style.position = 'static';
-                        elem.style.transform = 'scale(0.9)';
-                        elem.style.margin = '0 2px';
-                    });
-
-                    // 4. フォーカスを戻してあげる（親切設計）
-                    this.focusInitialSlot(container);
-                    
-                    // 5. 幅が変わったかもしれないので位置調整（右揃え維持）
-                    // ここは少し高度だけど、親コンテナの幅が変わるとズレる可能性があるの。
-                    // 完璧を目指すなら、generateNextStepの時の「右揃えロジック」をここでもやる必要があるけど、
-                    // まずは「中身が変わる」ことを確認できればOKよ！
-                }
-            }
-            // ================================================================
+            this.log(`Display: ${this.state.displayMode}`);
+            
+            // 再描画 (選んでいるカードだけが変身する)
+            this.refreshActiveResult();
+            this.saveConfig();
         };
+    },
+
+
+    setupModeButtons() {
+        // --- 1. 算数/数学 トグルボタン ---
+        const btnAppMode = document.getElementById('btn-toggle-app-mode');
+        if (btnAppMode) {
+            const updateLabel = () => {
+                // ★修正: 色を変える行を削除したわ！文字だけ切り替えるの。
+                if (this.state.appMode === 'arithmetic') {
+                    btnAppMode.innerHTML = "◉算数<br>○数学";
+                } else {
+                    btnAppMode.innerHTML = "○算数<br>◉数学";
+                }
+            };
+            
+            updateLabel(); // 初期表示
+
+            btnAppMode.onclick = (e) => {
+                e.stopPropagation();
+                const newMode = (this.state.appMode === 'arithmetic') ? 'math' : 'arithmetic';
+                this.setAppMode(newMode);
+                updateLabel();
+            };
+        }
+
+        // --- 2. 仮分数/帯分数 トグルボタン ---
+        const btnFracMode = document.getElementById('btn-toggle-fraction-mode');
+        if (btnFracMode) {
+            const updateLabel = () => {
+                if (this.state.fractionMode === 'improper') {
+                    btnFracMode.innerHTML = "◉仮分数<br>○帯分数";
+                } else {
+                    btnFracMode.innerHTML = "○仮分数<br>◉帯分数";
+                }
+            };
+
+            updateLabel(); // 初期表示
+
+            btnFracMode.onclick = (e) => {
+                e.stopPropagation();
+                this.state.fractionMode = (this.state.fractionMode === 'improper') ? 'mixed' : 'improper';
+                updateLabel();
+                this.log(`Fraction Mode: ${this.state.fractionMode}`);
+                this.refreshActiveResult();
+
+                this.convertAllFractions();
+                this.saveConfig();
+            };
+        }
     },
 
     // ボタンの文字を今のモードに合わせる
@@ -1309,73 +1560,86 @@ const App = {
     },
 
 
-    // ====== spawnCard の書き換え（スクロール追従版） ======
+
+    // script.js : spawnCard メソッドをこれに書き換え
+
     spawnCard(type, value, x, y) { 
         let targetParent = document.getElementById(FIELD_ID);
         let isAbsolute = true;
         let finalX = x;
         let finalY = y;
 
-        // ★ロジック変更: フォーカスがある場合 (ここはそのまま)
+        // A. スロットの中に生成する場合（変更なし）
         if (this.state.activeSlot) {
             targetParent = this.state.activeSlot;
-            isAbsolute = false; // スロット内は static 配置
+            isAbsolute = false; 
         } 
-        // ★ロジック変更: フォーカスがない場合（基本生成場所）
+
+        // B. フィールド直下に生成する場合（★ここを大改造！）
         else {
-            // 1. 今の画面のスクロール位置を取得
-            const scrollLeft = targetParent.scrollLeft;
-            const scrollTop = targetParent.scrollTop;
+            const field = targetParent;
+            const scrollTop = field.scrollTop;
+            const scrollLeft = field.scrollLeft;
+            const clientW = field.clientWidth;  // 画面の幅
+            const clientH = field.clientHeight; // 画面の高さ
 
-            // コンテナ系かどうかを判定
-            const isContainer = 
-                type === 'structure' || 
-                type === 'root' || 
-                type === 'power' || 
-                ['分数', '√', '|x|', '( )'].includes(value);
-
-            const cursor = this.state.spawnCursor;
-            const stepX = 25; // 右にずらす量
-
-            // 2. カーソルが「今の画面」から置いてけぼりになっていないかチェック！
-            // (現在予定されているY座標と、今の画面のY座標のズレが 100px 以上あったらリセット)
+            // 1. 今、画面内（ビューポート）に見えているカードを探す
+            const cards = Array.from(field.querySelectorAll(':scope > .math-card'));
             
-            // 比較対象のカーソルY
-            let currentCursorY = isContainer ? cursor.structY : cursor.normalY;
+            let maxBottom = -Infinity; // 一番下のY座標を記録
+            let foundVisible = false;  // 画面内にカードがあったか？
 
-            // 画面の上端（scrollTop）と比較して、大きくズレていたらカーソルを現在地に持ってくる
-            // "50" は余白（マージン）なの。
-            if (Math.abs(currentCursorY - (scrollTop + 50)) > 100) {
-                // リセット発動！
-                if (isContainer) {
-                    cursor.structX = scrollLeft + 50;
-                    cursor.structY = scrollTop + 150; // コンテナはちょっと下
-                } else {
-                    cursor.normalX = scrollLeft + 50;
-                    cursor.normalY = scrollTop + 50;
+            // 判定基準: 画面の上下左右に入っているか
+            const viewTop = scrollTop;
+            const viewBottom = scrollTop + clientH;
+            const viewLeft = scrollLeft;
+            const viewRight = scrollLeft + clientW;
+
+            cards.forEach(card => {
+                const cardTop = card.offsetTop;
+                const cardLeft = card.offsetLeft;
+                const cardH = card.offsetHeight;
+                const cardW = card.offsetWidth;
+                
+                // カードの四隅のどこかが画面内に入っていれば「見えている」とみなす
+                // (簡易判定として、縦方向の重複チェック＋横方向の重複チェック)
+                const isVerticalVisible = (cardTop + cardH > viewTop) && (cardTop < viewBottom);
+                const isHorizontalVisible = (cardLeft + cardW > viewLeft) && (cardLeft < viewRight);
+
+                if (isVerticalVisible && isHorizontalVisible) {
+                    // 一番下のラインを更新
+                    if (cardTop + cardH > maxBottom) {
+                        maxBottom = cardTop + cardH;
+                    }
+                    foundVisible = true;
                 }
-                this.log("Cursor: Followed View"); // ログに出してみる
-            }
-            
-            // 3. 座標を決定
-            if (isContainer) {
-                // 下の段に配置
-                finalX = cursor.structX;
-                finalY = cursor.structY;
-                cursor.structX += stepX;
+            });
+
+            // 2. 座標を決定
+            if (foundVisible) {
+                // ケースA: 画面内にカードがあるなら、その「一番下」に置く（左寄せ）
+                finalY = maxBottom + 30;  // 30pxの隙間
+                finalX = scrollLeft + 50; // X座標は左側（改行イメージ）
             } else {
-                // 上の段に配置
-                finalX = cursor.normalX;
-                finalY = cursor.normalY;
-                cursor.normalX += stepX;
+                // ケースB: 画面に何もない（真っ白な場所に移動した）なら、「右上」に置く！
+                // Y座標：上から少し空ける
+                finalY = scrollTop + 50;
+                
+                // X座標：右端から少し戻る
+                // 「式コンテナ」の幅を考慮して、右端から250pxくらい左に置くのが安全かな？
+                finalX = scrollLeft + 50; 
+                
+                // ※画面がスマホなどで狭すぎて、左にはみ出る場合は補正する
+                if (finalX < scrollLeft + 20) {
+                    finalX = scrollLeft + 20;
+                }
             }
         }
 
-        // カードインスタンス作成
+        // --- 以下、生成処理（変更なし） ---
         const card = new MathCard(type, value, finalX, finalY);
         targetParent.appendChild(card.element);
 
-        // 配置スタイルの適用
         if (!isAbsolute) {
             card.element.style.position = 'static';
             card.element.style.left = '';
@@ -1383,7 +1647,6 @@ const App = {
             card.element.style.transform = 'scale(0.9)';
             card.element.style.margin = '0 2px';         
         } else {
-            // absoluteの場合のみ座標セット
             card.element.style.left = `${finalX}px`;
             card.element.style.top = `${finalY}px`;
         }
@@ -2059,8 +2322,11 @@ if (container.classList.contains('container-fraction')) {
                 if (typeof config.showHints !== 'undefined') this.state.configShowHints = config.showHints;
                 if (typeof config.showInfo !== 'undefined') this.state.configShowInfo = config.showInfo;
                 
-                // ★追加: モードの読み込み
                 if (config.appMode) this.state.appMode = config.appMode;
+
+                // ★追加: 保存した設定があれば復元する！
+                if (config.displayMode) this.state.displayMode = config.displayMode;
+                if (config.fractionMode) this.state.fractionMode = config.fractionMode;
 
                 this.log("Config Loaded from Storage");
             } catch (e) { console.error("Config Load Error", e); }
@@ -2068,15 +2334,17 @@ if (container.classList.contains('container-fraction')) {
     },
 
     // 現在の設定を保存する
-
     saveConfig() {
         const config = {
             autoResetNegative: this.state.configAutoResetNegative,
             showHints: this.state.configShowHints,
             showInfo: this.state.configShowInfo,
             
-            // ★追加: モードの保存
-            appMode: this.state.appMode
+            appMode: this.state.appMode,
+            
+            // ★追加: この2つも保存リストに入れる！
+            displayMode: this.state.displayMode,
+            fractionMode: this.state.fractionMode
         };
         localStorage.setItem('math-card-config', JSON.stringify(config));
     },
@@ -2301,42 +2569,28 @@ if (container.classList.contains('container-fraction')) {
     },
 
 
-    // モードボタンのイベント設定
-    setupModeButtons() {
-        const btnArith = document.getElementById('btn-mode-arithmetic');
-        const btnMath = document.getElementById('btn-mode-math');
-
-        if (btnArith) {
-            btnArith.onclick = () => this.setAppMode('arithmetic');
-        }
-        if (btnMath) {
-            btnMath.onclick = () => this.setAppMode('math');
-        }
-    },
 
     // モードを切り替えて保存・UI反映する
     setAppMode(mode) {
         // 1. ステート更新
         this.state.appMode = mode;
 
-        // 2. UI更新（排他制御）
-        const btnArith = document.getElementById('btn-mode-arithmetic');
-        const btnMath = document.getElementById('btn-mode-math');
-
-        if (btnArith && btnMath) {
-            if (mode === 'arithmetic') {
-                btnArith.classList.add('active');
-                btnMath.classList.remove('active');
-                this.log("Mode: Arithmetic (算数)");
-            } else {
-                btnArith.classList.remove('active');
-                btnMath.classList.add('active');
-                this.log("Mode: Math (数学)");
-            }
+        // 計算エンジン側にもモード変更を即座に伝える！
+        if (typeof MathEngine !== 'undefined') {
+            MathEngine.config.mode = mode;
         }
 
-        // 3. 設定保存
+        // ログ出力
+        if (mode === 'arithmetic') {
+            this.log("Mode: Arithmetic (算数)");
+        } else {
+            this.log("Mode: Math (数学)");
+        }
+
+        // 2. 設定保存
         this.saveConfig();
+        
+        // ※ボタンの見た目は setupModeButtons の updateLabel で管理しているので、ここには書かなくてOK！
     },
 
 

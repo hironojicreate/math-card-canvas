@@ -1,29 +1,40 @@
 // ====== Math Card Engine (計算エンジン) ======
-// Phase 2.5 Complete: Fraction + Root(Surd) + Polynomial Support
+// Phase 3.0: Arithmetic Mode Support (Fraction Step-by-Step)
 
 // ---------------------------------------------------------
-// 1. Fraction Class (有理数クラス) - 変更なし
+// 1. Fraction Class (有理数クラス)
 // ---------------------------------------------------------
 class Fraction {
-    constructor(numerator, denominator = 1) {
+    // ★変更: autoReduce 引数を追加 (デフォルトは true で既存動作を維持)
+    constructor(numerator, denominator = 1, autoReduce = true) {
         if (!Number.isInteger(numerator) || !Number.isInteger(denominator)) {
             const factor = 100000; 
             numerator = Math.round(numerator * factor);
             denominator = Math.round(denominator * factor);
         }
         if (denominator === 0) { console.error("Zero Division!"); denominator = 1; }
+        
+        // 符号の整理
         this.s = (numerator * denominator < 0) ? -1 : 1;
         this.n = Math.abs(numerator);
         this.d = Math.abs(denominator);
+        
+        // 元の値を保持（あまり計算などで使う）
         this.on = this.n;
         this.od = this.d;
-        this.reduce();
+
+        // ★変更: フラグが true の時だけ約分する
+        if (autoReduce) {
+            this.reduce();
+        }
     }
+
     reduce() {
         const gcd = (a, b) => b ? gcd(b, a % b) : a;
         const g = gcd(this.n, this.d);
         this.n /= g; this.d /= g;
     }
+
     add(other) {
         const n1 = this.s * this.n; const n2 = other.s * other.n;
         return new Fraction(n1 * other.d + n2 * this.d, this.d * other.d);
@@ -38,20 +49,30 @@ class Fraction {
     div(other) {
         return new Fraction(this.s * other.s * this.n * other.d, this.d * other.n);
     }
-    // 逆数を返す
     inverse() {
         return new Fraction(this.s * this.d, this.n);
     }
     pow(expFrac) {
-        // 指数が整数の場合のみ対応 (中学生レベル)
         if (expFrac.d === 1) {
             const exp = expFrac.s * expFrac.n;
             if (exp === 0) return new Fraction(1);
             if (exp > 0) return new Fraction(Math.pow(this.s * this.n, exp), Math.pow(this.d, exp));
             if (exp < 0) return new Fraction(Math.pow(this.d, -exp), Math.pow(this.s * this.n, -exp));
         }
-        return new Fraction(0); // 未対応
+        return new Fraction(0);
     }
+    
+    // ★追加: 通分などのために、強制的に分母を指定した新しい分数を作るメソッド
+    scaleTo(newDenominator) {
+        if (newDenominator % this.d !== 0) {
+            console.warn("Cannot scale fraction simply (integers only)");
+            return this;
+        }
+        const factor = newDenominator / this.d;
+        // 約分しない状態で返す
+        return new Fraction(this.s * this.n * factor, newDenominator, false);
+    }
+
     valueOf() { return this.s * this.n / this.d; }
     toString() {
         if (this.n === 0) return "0";
@@ -62,22 +83,13 @@ class Fraction {
 }
 
 // ---------------------------------------------------------
-// 2. Surd Class (ルート単項式クラス) ★New!
-// 形式: coeff * √root * vars
-// 例: 2x -> coeff=2, root=1, vars={x:1}
-// 例: 3x^2y -> coeff=3, root=1, vars={x:2, y:1}
+// 2. Surd Class (ルート単項式クラス)
 // ---------------------------------------------------------
-
-
-// ====== math-engine.js : 2. Surd Class (ルート単項式クラス) を丸ごと書き換え ======
-
-// 形式: coeff * √root * vars
-// 例: 2x -> coeff=2, root=1, vars={x:1}
 class Surd {
     constructor(coeff, root = 1, vars = {}) {
         this.coeff = coeff; // Fraction
         this.root = root;   // Integer
-        this.vars = vars;   // Object { x: 1, y: 2 } など
+        this.vars = vars;   // Object { x: 1, y: 2 }
         this.simplify();
     }
 
@@ -107,12 +119,10 @@ class Surd {
     }
 
     mul(other) {
-        // 係数とルートの計算
         const newCoeff = this.coeff.mul(other.coeff);
         const newRoot = this.root * other.root;
         
-        // 変数の計算 (指数法則: x^a * x^b = x^(a+b))
-        const newVars = { ...this.vars }; // コピー
+        const newVars = { ...this.vars };
         for (let v in other.vars) {
             if (newVars[v]) {
                 newVars[v] += other.vars[v];
@@ -123,16 +133,11 @@ class Surd {
         return new Surd(newCoeff, newRoot, newVars);
     }
     
-    // 同類項判定 (ルートの中身 AND 変数の構成 が一致するか)
     isLikeTerm(other) {
         if (this.root !== other.root) return false;
-        
-        // 変数のキー数チェック
         const keysA = Object.keys(this.vars).sort();
         const keysB = Object.keys(other.vars).sort();
         if (keysA.length !== keysB.length) return false;
-
-        // 中身チェック
         for (let k of keysA) {
             if (keysB.indexOf(k) === -1) return false;
             if (this.vars[k] !== other.vars[k]) return false;
@@ -144,7 +149,6 @@ class Surd {
         if (this.coeff.n === 0) return "";
         let s = "";
         
-        // 変数部分の文字列作成
         let varStr = "";
         const keys = Object.keys(this.vars).sort();
         for (let k of keys) {
@@ -156,17 +160,13 @@ class Surd {
         const absCoeff = Math.abs(this.coeff.valueOf());
         const isCoeffOne = (absCoeff === 1 && this.coeff.d === 1);
         
-        // マイナス処理
         if (this.coeff.s === -1) s += "-";
 
-        // 係数を表示すべきか？
         const hasVars = varStr.length > 0;
         const hasRoot = this.root !== 1;
 
         if (isCoeffOne) {
-            if (!hasVars && !hasRoot) {
-                s += "1"; // ただの1
-            }
+            if (!hasVars && !hasRoot) s += "1";
         } else {
             const c = new Fraction(this.coeff.n, this.coeff.d);
             if (c.d === 1) s += c.n;
@@ -181,22 +181,18 @@ class Surd {
 }
 
 // ---------------------------------------------------------
-// 3. Poly Class (多項式クラス) ★New!
-// 複数の Surd の和として式を管理する
-// 例: 2 + 3√2 -> [Surd(2,1), Surd(3,2)]
+// 3. Poly Class (多項式クラス)
 // ---------------------------------------------------------
 class Poly {
     constructor(terms = []) {
-        this.terms = terms; // Array of Surd
-        this.collectTerms(); // 同類項をまとめる
+        this.terms = terms; 
+        this.collectTerms();
     }
 
-    // 同類項をまとめる (例: 2x + 3x -> 5x,  √2 + 2√2 -> 3√2)
     collectTerms() {
         if (this.terms.length <= 1) return;
 
         const newTerms = [];
-        // ルートの中身 + 変数構成 をキーにしてグループ化
         const groups = {};
         
         for (let term of this.terms) {
@@ -206,33 +202,23 @@ class Poly {
             if (!groups[key]) {
                 groups[key] = {
                     baseTerm: term,
-                    // ★修正: 0から足すのではなく、最初の項を「そのまま」使う！
-                    // これで Fraction オブジェクトが再生成されず、on/od の記憶が保たれるわ。
                     totalCoeff: term.coeff 
                 };
             } else {
-                // 2つ目以降は足し合わせる（この場合は記憶が消えても仕方ない＝計算結果だから）
                 groups[key].totalCoeff = groups[key].totalCoeff.add(term.coeff);
             }
         }
 
-        // グループごとに項を再生成
         for (let key in groups) {
             const g = groups[key];
-            if (g.totalCoeff.n !== 0) { // 係数が0じゃない項だけ残す
-                // ベースの項から、係数だけ差し替えた新しい項を作る
+            if (g.totalCoeff.n !== 0) {
                 newTerms.push(new Surd(g.totalCoeff, g.baseTerm.root, { ...g.baseTerm.vars }));
             }
         }
         
-        // 全部消えたら0にする
         if (newTerms.length === 0) {
             newTerms.push(new Surd(new Fraction(0), 1));
         }
-        
-        // 見た目が綺麗になるように、変数の次数の高い順や辞書順にソートするロジックを入れてもいいけど
-        // まずは生成順（ハッシュ順）で出すわ
-
         this.terms = newTerms;
     }
 
@@ -241,7 +227,6 @@ class Poly {
     }
 
     sub(otherPoly) {
-        // 引く方の符号を反転させた項を作る
         const negatedTerms = otherPoly.terms.map(t => {
             const negCoeff = t.coeff.mul(new Fraction(-1));
             return new Surd(negCoeff, t.root);
@@ -250,7 +235,6 @@ class Poly {
     }
 
     mul(otherPoly) {
-        // 分配法則 (総当たり)
         const newTerms = [];
         for (let t1 of this.terms) {
             for (let t2 of otherPoly.terms) {
@@ -260,45 +244,29 @@ class Poly {
         return new Poly(newTerms);
     }
     
-    // 中学生レベルでは多項式の割り算は難しいので、
-    // 「全体が単項式（項が1つ）」の場合のみ割り算可能とする簡易実装
     div(otherPoly) {
         if (this.terms.length === 1 && otherPoly.terms.length === 1) {
              const t1 = this.terms[0];
              const t2 = otherPoly.terms[0];
-             // (a√b) / (c√d) = (a/c) * √(b/d) -> これは難しい
-             // 中学生ルール: 分母を有理化できる形ならやるが...
-             // ここでは「有理数の割り算」のみ完璧に対応し、ルート同士は「割り切れるなら」対応する
-             
-             // 係数の割り算
              const newCoeff = t1.coeff.div(t2.coeff);
              
-             // ルートの中身: 割り切れるか？ (√6 / √2 = √3)
              if (t1.root % t2.root === 0) {
                  return new Poly([new Surd(newCoeff, t1.root / t2.root)]);
              }
-             // 割り切れない場合、分数の中にルートが残るが...今のSurd構造では表現しきれない
-             // 暫定対応: 近似値にして返すか、エラーにするか。
-             // 今回は「係数だけ割って、ルートはそのまま」にする (√2 / 2 -> 1/2√2)
-             // ただし分母にルートがある場合は未対応
              if (t2.root === 1) {
                  return new Poly([new Surd(newCoeff, t1.root)]);
              }
         }
-        // 未対応
         console.warn("Complex division not supported yet");
-        return this; // とりあえず自分を返す
+        return this; 
     }
     
-    // べき乗 (整数乗のみ)
     pow(expPoly) {
-        // 指数が「単項式の整数」であることを確認
         if (expPoly.terms.length === 1 && expPoly.terms[0].root === 1 && expPoly.terms[0].coeff.d === 1) {
              const exp = expPoly.terms[0].coeff.valueOf();
              if (exp === 0) return new Poly([new Surd(new Fraction(1))]);
              if (exp === 1) return this;
              
-             // 愚直に掛け算する (2乗、3乗くらいならこれでOK)
              let result = new Poly([new Surd(new Fraction(1))]);
              for (let i=0; i<exp; i++) {
                  result = result.mul(this);
@@ -310,20 +278,18 @@ class Poly {
 
     toString() {
         if (this.terms.length === 0) return "0";
-        // 項をつなげて文字列にする
         let s = "";
         this.terms.forEach((term, index) => {
             const termStr = term.toString();
-            if (termStr === "") return; // 係数0
+            if (termStr === "") return;
 
             if (index === 0) {
                 s += termStr;
             } else {
-                // 2項目以降は符号を見る
                 if (term.coeff.s >= 0) {
                     s += " + " + termStr;
                 } else {
-                    s += " - " + termStr.replace("-", ""); // マイナスを取ってつける
+                    s += " - " + termStr.replace("-", "");
                 }
             }
         });
@@ -336,13 +302,19 @@ class Poly {
 // 4. MathEngine (ステップ実行対応版)
 // ---------------------------------------------------------
 const MathEngine = {
+    // コンフィグを外部から注入できるように
+    // (script.js側で App.state.appMode をここにセットすることを想定)
     config: { mode: 'arithmetic' },
 
     init() {
-        console.log("Math Engine: Ready! (Step-by-Step Mode 🌰)");
+        console.log("Math Engine: Ready! (Arithmetic/Math Modes Supported 🌰)");
     },
 
-    // --- Phase 1: Parser (変更なし) ---
+    // --- Utility Functions ---
+    gcd(a, b) { return b ? this.gcd(b, a % b) : a; },
+    lcm(a, b) { return (a * b) / this.gcd(a, b); },
+
+    // --- Phase 1: Parser ---
 
     parse(cardElements) {
         let parsedNodes = [];
@@ -360,35 +332,20 @@ const MathEngine = {
             }
         };
 
-        // ★ここを大改造！: 暗黙の掛け算チェック & 「係数合体」ロジック
         const checkImplicit = (curr) => {
             if (parsedNodes.length === 0) return;
             const prev = parsedNodes[parsedNodes.length - 1];
             
-            // パターンA: 数字(Number) のあとに 変数(Variable) が来た！
-            // -> [2, x] を [*] で繋ぐのではなく、[Poly(2x)] に合体させる！
             if (prev.type === 'number' && curr.type === 'variable') {
-                // 前の数字を取り消す
                 parsedNodes.pop();
-                
-                // Poly(係数*変数) を作って入れる
                 const vars = {};
                 vars[curr.value] = 1;
-                // 係数は prev.value
                 const polyNode = new Poly([new Surd(new Fraction(prev.value), 1, vars)]);
-                
                 parsedNodes.push(polyNode);
-                
-                // curr（今の変数ノード）はもう使わないので、呼び出し元で追加されないようにする工夫が必要だけど
-                // 配列操作しちゃってるから、currを「無効」にするフラグを立てるか、
-                // あるいは呼び出し元で `parsedNodes.push(curr)` するのを防ぐ必要があるわね。
-                
-                // ★トリック: currのタイプを 'merged' に変えて、呼び出し元で無視させる！
                 curr.type = 'merged'; 
                 return;
             }
 
-            // パターンB: 従来通りの暗黙の掛け算 (例: 2(x+1) など)
             const pT = (prev.type==='number'||prev.type==='structure'||prev.type==='variable'||prev instanceof Poly);
             const cT = (curr.type==='structure'||curr.type==='variable'||curr instanceof Poly);
             
@@ -400,7 +357,6 @@ const MathEngine = {
         cardElements.forEach(card => {
             const type = this.identifyType(card);
             
-            // ... (コンテナ系の処理はそのまま) ...
             if (['root', 'fraction', 'sqrt', 'power', 'symbol'].includes(type)) {
                 flushBuffer();
                 if (pendingNegative) {
@@ -409,7 +365,7 @@ const MathEngine = {
                 }
                 
                 let sn = { type: 'structure', subType: type, children: [] };
-                // ... (中身のパース処理は既存のまま) ...
+                
                 if (type === 'root') {
                     const s = card.querySelector('.root-slot');
                     if (s) {
@@ -450,11 +406,8 @@ const MathEngine = {
             if (type === 'variable') {
                 flushBuffer();
                 if(pendingNegative) { const m={type:'number',value:-1}; checkImplicit(m); parsedNodes.push(m); pendingNegative=false;}
-                
                 const vn = { type:'variable', value:this.extractValue(card) };
                 checkImplicit(vn); 
-                
-                // ★追加: もし checkImplicit で合体(merged)されていたら、pushしない！
                 if (vn.type !== 'merged') {
                     parsedNodes.push(vn);
                 }
@@ -470,10 +423,9 @@ const MathEngine = {
     },
 
     // =========================================================
-    // Phase 2 Final: Step-by-Step Logic (指揮官と現場監督)
+    // Phase 2 Final: Step-by-Step Logic
     // =========================================================
 
-    // ★指揮官: 計算が終わるまでステップを回して、履歴を表示する
     calculate(nodes) {
         if (!nodes || nodes.length === 0) return null;
         console.log("Input Formula:", this.nodesToString(nodes));
@@ -481,99 +433,120 @@ const MathEngine = {
         let currentNodes = nodes;
         let stepCount = 1;
         
-        // 最大10ステップまで（無限ループ防止）
         while (stepCount <= 10) {
-            // 次のステップを計算してみる
             const nextResult = this.stepSolve(currentNodes);
             
-            // もし何も変わらなければ、計算終了
             if (!nextResult.changed) {
-                // 最終結果がPolyオブジェクトなら文字列にして返す
                 if (currentNodes.length === 1 && currentNodes[0] instanceof Poly) {
                     return currentNodes[0];
                 }
-                // まだリストなら、無理やりまとめてみる（本来はここで終了）
                 return currentNodes[0]; 
             }
 
-            // 変化があったらログに出す！
             currentNodes = nextResult.nodes;
             const stepStr = this.nodesToString(currentNodes);
-            console.log(`[Step ${stepCount}] ->`, stepStr); // ★ここがアニメーションの素！
-            
+            console.log(`[Step ${stepCount}] ->`, stepStr);
             stepCount++;
         }
-
         return currentNodes[0];
     },
 
-    // ★現場監督: 式全体を見て、1回だけ計算を進める
 
 
-
-    // ★修正版: 現場監督 (数字もちゃんと計算できるように改良！)
-
-    // ====== math-engine.js : MathEngine.stepSolve を書き換え ======
+    // math-engine.js : stepSolve をこれに書き換え
 
     stepSolve(nodes) {
         let newNodes = [...nodes];
         let changed = false;
         
-        // -----------------------------------------------------
-        // 作戦1: 「構造物の計算」 (Unboxing)
-        // ここでは「見た目が変わるような大きな変化」だけを感知するわ！
-        // -----------------------------------------------------
+// 作戦1: 構造物の計算 (Unboxing)
         for (let i = 0; i < newNodes.length; i++) {
             const node = newNodes[i];
             if (node.type === 'structure') {
                 const evaluated = this.evaluateStructureSimple(node);
                 if (evaluated) {
-                    // ★空気を読む判定ロジック★
-                    let isMeaningful = true;
+                    
+                    // ★追加: もしエラー（分母0など）が返ってきたら、即座にそれを結果として返して終了！
+                    if (evaluated.type === 'error') {
+                        return { nodes: [evaluated], changed: true };
+                    }
 
-                    // √コンテナの場合
+                    let isMeaningful = true;
+                    
                     if (node.subType === 'sqrt') {
-                        // 結果が「係数1のルート単項式」のままなら、見た目は変わってないとみなす
-                        // (例: √3 -> 1√3 ... これは変化なし扱い)
                         if (evaluated.terms.length === 1) {
                             const t = evaluated.terms[0];
-                            // ルートが残っていて(root!=1)、かつ係数が1なら「変化なし」
+                            // 係数が1か-1だけのルート（例: 1√2）は、見た目が変わらないので「変化なし」とみなす
                             if (t.root !== 1 && Math.abs(t.coeff.valueOf()) === 1) {
                                 isMeaningful = false; 
                             }
                         }
                     }
                     
-                    // データは更新する（計算できるようにするため）
+                    // 分数コンテナの場合、中身が「計算式」だった場合はちゃんと「変化あり」とする！
+                    if (node.subType === 'fraction') {
+                        // 中身が単純な数値だけかチェックする関数
+                        const isSimple = (list) => {
+                            if (!list || list.length === 0) return true;
+                            if (list.length > 1) return false; // 「8 + 6」のように要素が複数なら計算式！
+                            return list[0].type === 'number';  // 「2」のように数字1つなら単純
+                        };
+
+                        // 分子も分母も単純な数字なら、それは「変化なし（再計算不要）」とみなす
+                        if (isSimple(node.numerator) && isSimple(node.denominator)) {
+                            isMeaningful = false; 
+                        } else {
+                            // 計算式が含まれていたなら、それは意味のある変化！
+                            isMeaningful = true;
+                        }
+                    }
+
                     newNodes[i] = evaluated;
                     
-                    // 「劇的な変化」があった時だけ、changedフラグを立てる
-                    if (isMeaningful) {
-                        changed = true;
-                    }
-                    // ★重要: ここで return せず、下の計算に進む！
-                    // これにより、2*√3 などが同じステップで計算されるの。
+                    // isMeaningfulがtrueの時だけフラグを立てる
+                    if (isMeaningful) changed = true;
                 }
             }
         }
 
-        // -----------------------------------------------------
+        if (changed) return { nodes: newNodes, changed: true };
+
+
         // 作戦2: 掛け算・割り算 (*, /)
-        // -----------------------------------------------------
         for (let i = 1; i < newNodes.length - 1; i++) {
             const op = newNodes[i];
             if (op.type === 'operator' && ['*', '×', '/', '÷'].includes(op.value)) {
                 const prev = newNodes[i-1];
                 const next = newNodes[i+1];
-                
                 const p = this.ensurePoly(prev);
                 const n = this.ensurePoly(next);
-
+                
                 if (p && n) {
                     let res;
-                    if (op.value === '*' || op.value === '×') res = p.mul(n);
-                    else res = p.div(n);
-                    
+                    if (op.value === '*' || op.value === '×') {
+                        res = p.mul(n);
+                        res.opType = 'mul'; // ★追加: 「かけ算」タグ！
+                    } else {
+                        // ★ここに追加: ゼロ除算チェック！
+                        // 割る数(n)が 0 かどうか判定
+                        // Polyの中身が 0 (係数の分子が0) ならアウト
+                        // (項が複数ある場合などは厳密にはもっと複雑だけど、今は単項式レベルでチェック)
+                        let isZero = false;
+                        if (n.terms.length === 1 && n.terms[0].coeff.n === 0) isZero = true;
+                        
+                        // もし0だったら、特別なエラーノードを返して即終了！
+                        if (isZero) {
+                            const errorNode = { 
+                                type: 'error', 
+                                value: '0では\nわれません' 
+                            };
+                            // 式全体をエラーメッセージに置き換えちゃう
+                            return { nodes: [errorNode], changed: true };
+                        }
+
+                        res = p.div(n);
+                        res.opType = 'div'; // ★追加: 「わり算」タグ！
+                    }
                     newNodes.splice(i-1, 3, res); 
                     i = i - 1; 
                     changed = true;
@@ -581,87 +554,152 @@ const MathEngine = {
             }
         }
 
-        if (changed) {
-            return { nodes: newNodes, changed: true };
-        }
+        if (changed) return { nodes: newNodes, changed: true };
 
-        // -----------------------------------------------------
         // 作戦3: 足し算・引き算 (+, -)
-        // -----------------------------------------------------
         for (let i = 1; i < newNodes.length - 1; i++) {
             const op = newNodes[i];
             if ((op.value === '+' || op.value === '-') && op.type === 'operator') {
                 const prev = newNodes[i-1];
                 const next = newNodes[i+1];
-                
                 const p = this.ensurePoly(prev);
                 const n = this.ensurePoly(next);
                 
                 if (p && n) {
+                    if (p.terms.length === 1 && n.terms.length === 1) {
+                        const t1 = p.terms[0];
+                        const t2 = n.terms[0];
+
+                        // 純粋な分数同士の足し算
+                        if (t1.root === 1 && Object.keys(t1.vars).length === 0 &&
+                            t2.root === 1 && Object.keys(t2.vars).length === 0) {
+                            
+                            const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d);
+
+                            // ★ A. 算数モード: 通分（バラバラ） or 計算（約分なし）
+                            if (this.config.mode === 'arithmetic') {
+                                if (t1.coeff.d !== t2.coeff.d) {
+                                    const f1 = t1.coeff.scaleTo(lcmVal);
+                                    const f2 = t2.coeff.scaleTo(lcmVal);
+                                    newNodes[i-1] = new Poly([new Surd(f1)]);
+                                    newNodes[i+1] = new Poly([new Surd(f2)]);
+                                    return { nodes: newNodes, changed: true };
+                                }
+                                else if (t1.coeff.d === t2.coeff.d && t1.coeff.d !== 1) {
+                                    const commonD = t1.coeff.d;
+                                    const n1 = t1.coeff.s * t1.coeff.n;
+                                    const n2 = t2.coeff.s * t2.coeff.n;
+                                    let newNum = (op.value === '+') ? n1 + n2 : n1 - n2;
+                                    
+                                    const resFrac = new Fraction(newNum, commonD, false);
+                                    newNodes.splice(i-1, 3, new Poly([new Surd(resFrac)]));
+                                    return { nodes: newNodes, changed: true };
+                                }
+                            }
+                            
+                            // ★ B. 数学モード: 分母が違うなら「合体」
+                            else if (this.config.mode === 'math') {
+                                if (t1.coeff.d !== t2.coeff.d) {
+                                    const num1Val = t1.coeff.s * t1.coeff.n * (lcmVal / t1.coeff.d);
+                                    const num2Val = t2.coeff.s * t2.coeff.n * (lcmVal / t2.coeff.d);
+
+                                    const numeratorNodes = [
+                                        { type: 'number', value: num1Val },
+                                        { type: 'operator', value: op.value }, 
+                                        { type: 'number', value: Math.abs(num2Val) }
+                                    ];
+                                    if (op.value === '+' && num2Val < 0) numeratorNodes[1].value = '-';
+                                    else if (op.value === '-' && num2Val < 0) numeratorNodes[1].value = '+';
+
+                                    const mergedFraction = {
+                                        type: 'structure',
+                                        subType: 'fraction',
+                                        numerator: numeratorNodes,
+                                        denominator: [{ type: 'number', value: lcmVal }]
+                                    };
+                                    newNodes.splice(i-1, 3, mergedFraction);
+                                    return { nodes: newNodes, changed: true };
+                                }
+                            }
+                        }
+                    }
+                    // 通常計算
                     let res;
-                    if (op.value === '+') res = p.add(n);
-                    else res = p.sub(n);
-                    
+
+                    if (op.value === '+') {
+                        res = p.add(n);
+                        res.opType = 'add'; // ★追加
+                    } else {
+                        res = p.sub(n);
+                        res.opType = 'sub'; // ★追加
+                    }
                     newNodes.splice(i-1, 3, res);
                     return { nodes: newNodes, changed: true };
                 }
             }
         }
+        
+        if (changed) return { nodes: newNodes, changed: true };
+
+        // -----------------------------------------------------
+        // 作戦4: 最後の仕上げ（約分）
+        // ★修正: モードに関係なく、約分できる分数が残っていたら約分する！
+        // -----------------------------------------------------
+        if (newNodes.length === 1 && newNodes[0] instanceof Poly) {
+             const poly = newNodes[0];
+             if (poly.terms.length === 1) {
+                 const term = poly.terms[0];
+                 if (term.root === 1 && Object.keys(term.vars).length === 0) {
+                      const f = term.coeff;
+                      const gcdVal = this.gcd(f.n, f.d);
+                      if (gcdVal > 1) {
+                          const reducedFrac = new Fraction(f.s * f.n, f.d, true); // trueで約分！
+                          newNodes[0] = new Poly([new Surd(reducedFrac)]);
+                          return { nodes: newNodes, changed: true };
+                      }
+                 }
+             }
+        }
 
         return { nodes: newNodes, changed: false };
     },
 
-    // ★追加: ノードがただの数字ならPolyに変換して返すヘルパー
-
-
     ensurePoly(node) {
         if (node instanceof Poly) return node;
-        
-        // 数字の場合
         if (node.type === 'number') {
             return new Poly([new Surd(new Fraction(node.value), 1)]);
         }
-        
-        // ★ここが大事！変数の場合を追加
         if (node.type === 'variable') {
-            // 係数1, ルート1, 変数{x:1} の項を作る
             const vars = {};
             vars[node.value] = 1; 
             return new Poly([new Surd(new Fraction(1), 1, vars)]);
         }
-
         return null;
     },
 
-    // 構造体ノードをチェックし、計算可能ならPolyにして返すヘルパー
     evaluateStructureSimple(node) {
-        // すでにPolyなら何もしない
         if (node instanceof Poly) return null;
         if (node.type === 'number') return new Poly([new Surd(new Fraction(node.value), 1)]);
         
-        // ここで「中身を再帰的に計算」して、Polyにできるか試す
-        // 今回はロジックを簡略化して、「evaluateNode (前回作った関数)」を再利用するわ！
-        // evaluateNodeは「計算できるものは全部Polyにする」やつだったわよね。
-        
         try {
-            // 中身がまだ演算子を含んでいる場合は、evaluateNodeはエラーになるか、変な挙動をするかも。
-            // でも今のカードの仕組み上、スロット内は独立しているから大丈夫。
-            // ★ここが「2^3」や「√16」を「8」「4」に変える魔法の場所よ！
             const result = this.evaluateNodeFull(node);
-            
-            // 結果がPolyで、かつ「中身が変わった（計算が進んだ）」なら返す
             return result;
         } catch (e) {
-            return null; // まだ計算できない
+            return null;
         }
     },
 
-    // (一発でPolyにする関数)
+
+    // ====== math-engine.js : evaluateNodeFull を書き換え ======
+
     evaluateNodeFull(node) {
         if (node instanceof Poly) return node;
-        if (node.type === 'number') return new Poly([new Surd(new Fraction(node.value), 1)]);
+        
+        // 数値単体の場合
+        if (node.type === 'number') {
+            return new Poly([new Surd(new Fraction(node.value, 1, false))]);
+        }
 
-        // 変数(variable)の場合 (これを忘れていたの！)
         if (node.type === 'variable') {
              const vars = {};
              vars[node.value] = 1; 
@@ -669,29 +707,74 @@ const MathEngine = {
         }
 
         if (node.type === 'structure') {
-            // Fraction
             if (node.subType === 'fraction') {
-                // 中身を再帰的にPolyへ
+                // 中身を計算
                 let intPart = this.calcSub(node.integer) || new Poly([new Surd(new Fraction(0))]);
                 let numPart = this.calcSub(node.numerator) || new Poly([new Surd(new Fraction(1))]);
                 let denPart = this.calcSub(node.denominator) || new Poly([new Surd(new Fraction(1))]);
+                
+                // ★追加: エラーが連鎖してきたらそのまま返す
+                if (intPart.type === 'error') return intPart;
+                if (numPart.type === 'error') return numPart;
+                if (denPart.type === 'error') return denPart;
+
+                // ★追加: 分母が0になっていないかチェック！
+                // (Polyであり、単項式であり、係数の分子が0である場合)
+                if (denPart instanceof Poly && denPart.terms.length === 1 && denPart.terms[0].coeff.n === 0) {
+                    return { type: 'error', value: '分母に0は\n入りません' };
+                }
+
                 let isPureSign = node.integer && node.integer[0] && node.integer[0].isPureSign;
 
+                // 単純な整数分の整数なら「約分なし」で作成
+                if (numPart.terms.length === 1 && denPart.terms.length === 1) {
+                    const tNum = numPart.terms[0];
+                    const tDen = denPart.terms[0];
+                    
+                    if (tNum.root === 1 && tDen.root === 1 && 
+                        Object.keys(tNum.vars).length === 0 && Object.keys(tDen.vars).length === 0) {
+                        
+                        const numVal = tNum.coeff.n * tNum.coeff.s;
+                        const denVal = tDen.coeff.n * tDen.coeff.s;
+                        
+                        // autoReduce = false (約分禁止)
+                        const rawFrac = new Fraction(numVal, denVal, false);
+                        let resultPoly = new Poly([new Surd(rawFrac)]);
+                        
+                        if (intPart.terms.length > 0 && intPart.terms[0].coeff.n !== 0) {
+                            if (isPureSign || intPart.terms[0].coeff.s < 0) return intPart.sub(resultPoly);
+                            return intPart.add(resultPoly);
+                        }
+                        return resultPoly;
+                    }
+                }
+
+                // 複雑な式（ルート入りなど）は通常の割り算（自動約分される）
                 let fracPart = numPart.div(denPart);
                 if (isPureSign) return new Poly([new Surd(new Fraction(0))]).sub(fracPart);
                 if (intPart.terms.length>0 && intPart.terms[0].coeff.s<0) return intPart.sub(fracPart);
                 return intPart.add(fracPart);
             }
-            // Power
+            
+            // ... (power, sqrt, symbol は変更なし ...
             if (node.subType === 'power') {
                 let base = this.calcSub(node.base);
                 let exp = this.calcSub(node.exponent);
+                
+                // エラー伝播
+                if (base && base.type === 'error') return base;
+                if (exp && exp.type === 'error') return exp;
+
                 if (base && exp) return base.pow(exp);
             }
-            // Sqrt
             if (node.subType === 'sqrt') {
                 let coef = this.calcSub(node.coefficient) || new Poly([new Surd(new Fraction(1))]);
                 let cont = this.calcSub(node.content);
+                
+                // エラー伝播
+                if (coef.type === 'error') return coef;
+                if (cont && cont.type === 'error') return cont;
+
                 if (cont) {
                     if (cont.terms.length===1 && cont.terms[0].root===1 && cont.terms[0].coeff.d===1) {
                         const val = cont.terms[0].coeff.valueOf();
@@ -699,30 +782,24 @@ const MathEngine = {
                     }
                 }
             }
-            // Parens
             if (node.subType === 'symbol') {
                 let c = this.calcSub(node.content);
+                if (c && c.type === 'error') return c; // エラー伝播
                 if (c) {
-                     if (node.symbolType === 'abs') { /* 絶対値処理略 */ }
+                     if (node.symbolType === 'abs') { /* ... */ }
                      return c;
                 }
             }
         }
         return null;
     },
-    // スロットの中身（配列）をPolyに変換するヘルパー
+
     calcSub(nodes) {
         if (!nodes || nodes.length === 0) return null;
-        // 再帰的に calculate を呼ぶとログが出ちゃうので、内部計算用の軽量版が本当は欲しいけど
-        // 今は単純に evaluateNodeFull に投げるわ
-        // (注: スロット内に "1+2" みたいな式が入っている場合は、本当はここで再帰calculateが必要)
-        // 今回のテストケース（2^3, √16）はスロット内が数字だけなのでこれで動くわ
         if (nodes.length === 1) return this.evaluateNodeFull(nodes[0]);
-        // 式が入っている場合は...今の構造だとまだ未対応だけど、Level 7まではこれでいける！
-        return this.calculate(nodes); // 再帰しちゃう！
+        return this.calculate(nodes); 
     },
 
-    // ログ表示用: ノードリストを文字列にする
     nodesToString(nodes) {
         return nodes.map(n => {
             if (n instanceof Poly) return `[${n.toString()}]`;
@@ -733,7 +810,6 @@ const MathEngine = {
         }).join("");
     },
 
-    // --- ヘルパー群 (変更なし) ---
     parseSlot(c, s) { const e = c.querySelector(`:scope > ${s}`) || c.querySelector(s); return e ? this.parse(Array.from(e.querySelectorAll(':scope > .math-card'))) : null; },
     identifyType(c) { 
         if(c.classList.contains('card-number'))return'number'; if(c.classList.contains('card-operator'))return'operator'; if(c.classList.contains('card-variable'))return'variable';
