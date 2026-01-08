@@ -342,13 +342,14 @@ const CardMaker = {
         return elements;
     },
  
+
     // Surd (coeff * √root * vars) をカード要素に変換
 
-
+    // Surd (coeff * √root * vars) をカード要素に変換
     surdToElements(surd, isFirstTerm, customRemainder) {
         const elems = [];
         
-        // 自動約分阻止 (false) はそのまま！
+        // 自動約分阻止 (false) はそのまま
         const absCoeff = new Fraction(Math.abs(surd.coeff.n), surd.coeff.d, false);
         
         // 変数やルートがあるかチェック
@@ -356,28 +357,45 @@ const CardMaker = {
         const hasVars = varKeys.length > 0;
         const hasRoot = surd.root !== 1;
 
-        // ★追加: 純粋な数字（変数やルートがない）かどうか
+        // 純粋な数字（変数やルートがない）かどうか
         const isPureNumber = !hasVars && !hasRoot;
 
-        // ★新ロジック: マイナスを数字カードに合体させるか判定
-        // 条件: 
-        // 1. 先頭の項である (isFirstTerm)
-        // 2. 係数がマイナスである (surd.coeff.s < 0)
-        // 3. 変数やルートがない単純な数である (!hasVars && !hasRoot)
-        // 4. 「整数(分母1)」 または 「純粋な数字 かつ 小数モード」 の場合
+        // 現在のモードチェック
         const isDecimalMode = (App.state.displayMode === 'decimal');
-        
-        const shouldMergeSign = (
-            isFirstTerm && 
-            surd.coeff.s < 0 && 
-            isPureNumber &&
-            (absCoeff.d === 1 || isDecimalMode) // ← ここがポイント！小数モードなら分母に関係なく合体！
+        const isMathMode = (App.state.appMode === 'math'); 
+
+        // ★帯分数モードの判定（割り切れない場合のみ！）
+        const isMixed = (
+            isPureNumber && 
+            App.state.fractionMode === 'mixed' && 
+            absCoeff.n > absCoeff.d && 
+            (absCoeff.n % absCoeff.d !== 0) 
         );
 
-        // --- 符号の処理 ---
-        // 先頭のマイナス、かつ「マージしない」場合だけ、独立した演算子カードを作る
-        // (つまり、マージする場合はここではカードを作らない！)
-        if (isFirstTerm && surd.coeff.s < 0 && !shouldMergeSign) {
+        // --- マイナスの処理方針を決める ---
+        const isNegative = surd.coeff.s < 0;
+
+        // A. 数字カード自体にマイナスを含めるか？ (整数/小数用)
+        const shouldMergeSignToNumber = (
+            isFirstTerm && 
+            isNegative && 
+            isPureNumber &&
+            (absCoeff.d === 1 || isDecimalMode)
+        );
+
+        // B. 分数の分子にマイナスを含めるか？ (数学モード用)
+        // 条件: 帯分数表示じゃない時だけ、分子に入れる
+        const shouldMergeSignToNumerator = (
+            isMathMode &&
+            isNegative &&
+            isPureNumber &&
+            absCoeff.d !== 1 && 
+            !isDecimalMode &&
+            !isMixed 
+        );
+
+        // --- 1. 独立した演算子カード(-)を作るか？ ---
+        if (isFirstTerm && isNegative && !shouldMergeSignToNumber && !shouldMergeSignToNumerator) {
             const minusCard = new MathCard('operator', '-', 0, 0).element;
             elems.push(minusCard);
         }
@@ -385,59 +403,29 @@ const CardMaker = {
         // --- 係数部分の表示判断 ---
         let showCoeff = true;
         if (absCoeff.n === 1 && absCoeff.d === 1) {
-            if (hasVars || hasRoot) {
-                showCoeff = false; // 1x, 1√2 などの1は隠す
-            }
+            if (hasVars || hasRoot) showCoeff = false;
         }
-        
-        // ★特例: マイナス1の場合 (-1x) は、マージしないなら符号は上で出ているので、数字の1は隠す
-        // でもマージする場合(-1)は、数字カードとして「-1」を出さなきゃいけないから showCoeff = true に戻す
-        if (shouldMergeSign && absCoeff.n === 1) {
-            showCoeff = true;
-        }
+        if (shouldMergeSignToNumber && absCoeff.n === 1) showCoeff = true;
 
 
         if (showCoeff) {
              if (absCoeff.d === 1) {
-                 // === 整数の場合 ===
+                 // === 整数の場合 (分母が1) ===
                  let valStr = absCoeff.n.toString();
-                 
-                 // ★ここでマージ実行！数字の前にマイナスをつける
-                 if (shouldMergeSign) {
-                     valStr = "-" + valStr;
-                 }
-                 
+                 if (shouldMergeSignToNumber) valStr = "-" + valStr;
                  elems.push(new MathCard('number', valStr, 0, 0).element);
+
              } else {
-                 // === 分数の場合 ===
-                 // (ここに変更はないけれど、前回追加した displayMode のロジックは維持してね)
-                 // const isPureNumber = ... (上で定義したので削除OK)
+                 // === 分数・小数・あまりの場合 ===
                  const mode = App.state.displayMode;
 
                  if (isPureNumber && mode === 'decimal') {
-
-                        // 【小数モード】
+                     // 【小数モード】
                      const decimalVal = absCoeff.n / absCoeff.d;
-                     
-                     // ★書き換え: toFixedを使って強制的に小数表記にする！
-                     // 精度を10桁に上げたので、ここも10桁まで確保してから、後ろの無駄な0を消すの。
-                     
-                     // 1. まず10桁の文字列にする（例: 2e-7 -> "0.0000002000"）
-                     let strVal = decimalVal.toFixed(10); 
-                     
-                     // 2. 末尾の "0" を消す（例: "0.0000002000" -> "0.0000002"）
-                     // 3. もし末尾が "." になったらそれも消す（例: "10." -> "10"）
-                     strVal = strVal.replace(/\.?0+$/, "");
-                     
-                     // ★追加: ここでもマージ実行！
-                     if (shouldMergeSign) {
-                         strVal = "-" + strVal;
-                     }
+                     let strVal = decimalVal.toFixed(10).replace(/\.?0+$/, "");
+                     if (shouldMergeSignToNumber) strVal = "-" + strVal;
 
-                     // ★書き換え: MAX_LEN を少し緩める
-                     // 小さい数は文字数が多くなる（0.0000001 は9文字）ので、15文字くらいまで許容するの。
                      const MAX_LEN = 11; 
-                     
                      if (strVal.length > MAX_LEN) {
                          let displayVal = strVal.substring(0, MAX_LEN);
                          if (displayVal.endsWith('.')) displayVal = displayVal.slice(0, -1);
@@ -446,52 +434,32 @@ const CardMaker = {
                      } else {
                          elems.push(new MathCard('number', strVal, 0, 0).element);
                      }
-                 } else if (isPureNumber && mode === 'remainder') {
 
-                    // 【あまりモード】 (★大改造！)
-                     
+                 } else if (isPureNumber && mode === 'remainder') {
+                     // 【あまりモード】
                      let quotientStr, remainderStr;
-                     
-                     // エンジンから「本当の余り」が届いている場合
                      if (customRemainder !== undefined && customRemainder !== null) {
-                         // 商は 分子÷分母 の整数部分 (absCoeffは常に正なのでfloorでOK)
-                         const qVal = Math.floor(absCoeff.n / absCoeff.d);
-                         quotientStr = qVal.toString();
-                         
-                         // 余りは届いた値をフォーマットして使う
-                         // (小数かもしれないので、小数の整形ロジックを流用)
-                         let rVal = customRemainder.toFixed(10);
-                         rVal = rVal.replace(/\.?0+$/, "");
-                         remainderStr = rVal;
-                     } 
-                     // 届いていない場合（手入力の分数など）は従来の計算
-                     else {
+                         quotientStr = Math.floor(absCoeff.n / absCoeff.d).toString();
+                         remainderStr = customRemainder.toFixed(10).replace(/\.?0+$/, "");
+                     } else {
                          const num = (surd.coeff.on !== undefined) ? surd.coeff.on : absCoeff.n;
                          const den = (surd.coeff.od !== undefined) ? surd.coeff.od : absCoeff.d;
                          quotientStr = Math.floor(num / den).toString();
                          remainderStr = (num % den).toString();
                      }
-
                      elems.push(new MathCard('number', quotientStr, 0, 0).element);
                      elems.push(new MathCard('operator', 'あまり', 0, 0).element); 
                      elems.push(new MathCard('number', remainderStr, 0, 0).element);
+
                  } else {
                      // 【分数モード】 
-                     const fracCard = new MathCard('structure', '分数', 0, 0).element;
                      
-                     // ★変更: ここで「仮分数 vs 帯分数」の判定を行う！
-                     
-                     // 1. 変数などがついていない純粋な分数か？
-                     const isPure = !hasVars && !hasRoot;
-                     
-                     // 2. モードが「帯分数」で、かつ分子が分母より大きい（仮分数である）か？
-                     // (注: 分母が1の場合は上で「整数」として処理されているのでここには来ない)
-                     if (isPure && App.state.fractionMode === 'mixed' && absCoeff.n > absCoeff.d) {
-                         // === 帯分数化ロジック ===
+                     if (isMixed) {
+                         // === 帯分数表示 (余りが出る場合のみ) ===
+                         const fracCard = new MathCard('structure', '分数', 0, 0).element;
                          const integerPart = Math.floor(absCoeff.n / absCoeff.d);
                          const remainderNum = absCoeff.n % absCoeff.d;
 
-                         // 整数部分をセット
                          const intSlot = fracCard.querySelector('.integer-part');
                          if (intSlot && integerPart > 0) {
                              const intCard = new MathCard('number', integerPart.toString(), 0, 0).element;
@@ -500,23 +468,37 @@ const CardMaker = {
                              intSlot.appendChild(intCard);
                          }
 
-                         // 分数部分（真分数）をセット
-                         // 分子が0になることは通常ないけど（d=1で弾かれるから）、念のためFractionを作る
                          const newFrac = new Fraction(remainderNum, absCoeff.d, false);
                          this.fillFraction(fracCard, newFrac);
+                         
+                         elems.push(fracCard);
 
                      } else {
-                         // === 通常（仮分数）ロジック ===
-                         // そのまま入れる
-                         this.fillFraction(fracCard, absCoeff);
-                     }
+                         // === 仮分数表示 ===
+                         // (帯分数モードでも割り切れる場合を含む)
+                         
+                         const fracCard = new MathCard('structure', '分数', 0, 0).element;
+                         
+                         // ★★★ ここを修正！ ★★★
+                         let displayNum = absCoeff.n;
+                         const displayDen = absCoeff.d;
 
-                     elems.push(fracCard);
+                         if (shouldMergeSignToNumerator) {
+                             // 強制的にマイナスをつける
+                             displayNum = -absCoeff.n;
+                         }
+
+                         // new Fraction() を使わず、直接オブジェクトを作って渡す！
+                         // これでエンジンの自動変換を回避できるの。
+                         this.fillFraction(fracCard, { n: displayNum, d: displayDen });
+                         
+                         elems.push(fracCard);
+                     }
                  }
              }
         }
 
-        // --- ルート部分 ---
+        // --- ルート・変数はそのまま ---
         if (hasRoot) {
             const sqrtCard = new MathCard('operator', '√', 0, 0).element;
             const contentSlot = sqrtCard.querySelector('.sqrt-border-top');
@@ -529,7 +511,6 @@ const CardMaker = {
             elems.push(sqrtCard);
         }
 
-        // --- 変数部分 ---
         varKeys.forEach(key => {
             const power = surd.vars[key];
             if (power === 1) {
@@ -556,7 +537,7 @@ const CardMaker = {
 
         return elems;
     },
-
+    
     // 分数コンテナの中身を埋めるヘルパー
     fillFraction(cardEl, fractionObj) {
         const numSlot = cardEl.querySelector('.numerator');

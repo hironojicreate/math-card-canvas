@@ -463,7 +463,7 @@ const MathEngine = {
         let newNodes = [...nodes];
         let changed = false;
         
-        // ★ヘルパー: 中身が単純な数値(または変数)だけかチェックする関数
+        // 中身が単純な数値(または変数)だけかチェックする関数
         const isSimple = (list) => {
             if (!list || list.length === 0) return true;
             if (list.length > 1) return false; 
@@ -474,6 +474,34 @@ const MathEngine = {
         // 作戦1: 構造物の計算 (Unboxing)
         for (let i = 0; i < newNodes.length; i++) {
             const node = newNodes[i];
+
+            // 帯分数を仮分数に展開するステップ
+            if (node.type === 'structure' && node.subType === 'fraction') {
+                // 整数部分(integer)があり、かつ中身が確定している場合
+                if (node.integer && node.integer.length > 0 && isSimple(node.integer) &&
+                    isSimple(node.numerator) && isSimple(node.denominator)) {
+                    
+                    const intVal = node.integer[0].value;
+                    const numVal = node.numerator[0].value;
+                    const denVal = node.denominator[0].value;
+
+                    // 整数部分が 0 以外なら、仮分数に変換する！
+                    if (intVal !== 0) {
+                        const newNum = intVal * denVal + numVal;
+                        
+                        // 構造を書き換える（整数部分を空にして、分子を更新）
+                        newNodes[i] = {
+                            type: 'structure',
+                            subType: 'fraction',
+                            integer: [], // 空にする
+                            numerator: [{ type: 'number', value: newNum }],
+                            denominator: [{ type: 'number', value: denVal }]
+                        };
+                        return { nodes: newNodes, changed: true };
+                    }
+                }
+            }
+
             if (node.type === 'structure') {
                 let evaluated = this.evaluateStructureSimple(node);
                 if (evaluated) {
@@ -665,7 +693,7 @@ const MathEngine = {
                             // 複雑な式なら普通に計算
                             res = p.div(n);
                         }
-                        
+
                         res.opType = 'div'; 
                     }
                     newNodes.splice(i-1, 3, res); 
@@ -726,9 +754,16 @@ const MathEngine = {
                                     const n2 = t2.coeff.s * t2.coeff.n * (lcmVal / t2.coeff.d);
                                     
                                     let newNum = (op.value === '+') ? n1 + n2 : n1 - n2;
+
+                                    // 0になったら即リターン！
+                                    if (newNum === 0) {
+                                        const zeroFrac = new Fraction(0, 1);
+                                        newNodes.splice(i-1, 3, new Poly([new Surd(zeroFrac)]));
+                                        return { nodes: newNodes, changed: true };
+                                    }
                                     
                                     // 結果を作成（あえて約分autoReduce=trueで作成して、綺麗な形にする）
-                                    const resFrac = new Fraction(newNum, lcmVal, true);
+                                    const resFrac = new Fraction(newNum, lcmVal, false);
                                     newNodes.splice(i-1, 3, new Poly([new Surd(resFrac)]));
                                     return { nodes: newNodes, changed: true };
                                 }
@@ -790,7 +825,12 @@ const MathEngine = {
                                     
                                     let newNum = (op.value === '+') ? n1 + n2 : n1 - n2;
                                     
-                                    const resFrac = new Fraction(newNum, lcmVal, true);
+                                    if (newNum === 0) {
+                                        const zeroFrac = new Fraction(0, 1);
+                                        newNodes.splice(i-1, 3, new Poly([new Surd(zeroFrac)]));
+                                        return { nodes: newNodes, changed: true };
+                                    }
+                                    const resFrac = new Fraction(newNum, lcmVal, false);
                                     newNodes.splice(i-1, 3, new Poly([new Surd(resFrac)]));
                                     return { nodes: newNodes, changed: true };
                                 }
