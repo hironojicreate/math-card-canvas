@@ -228,6 +228,49 @@ button:hover { background-color: #f0f0f0; }
     line-height: 1.3;
 }
 
+/* ====== style.css の末尾に追加・修正 ====== */
+
+/* 1. 分数ボタンのビジュアル（巨大化） */
+.btn-visual-fraction {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    
+    font-family: "Times New Roman", serif; 
+    font-size: 24px;   /* ★文字サイズを大きく！(14px→24px) */
+    line-height: 0.8;  /* ★行間を詰めて、ボタン(50px)に収める */
+}
+
+.btn-frac-line {
+    width: 180%;
+    height: 2px;       /* 線も少し太くしてバランスを取る */
+    background-color: currentColor; 
+    margin: 2px 0;     /* 隙間は最小限に */
+}
+
+/* 2. べき乗ボタンのビジュアル（「2」を巨大化、他は小さく） */
+.btn-visual-power {
+    font-family: "Times New Roman", serif;
+    display: inline-flex;
+    align-items: flex-start; /* 上揃え（指数っぽく） */
+    line-height: 1;
+}
+
+.power-base {
+    font-size: 25px !important; /* 強制的に大きく！ */
+    color: #9b59b6;             /* ボタンの色（紫） */
+    line-height: 0.9;           /* 高さを少し詰める */
+}
+
+.power-sup {
+    font-size: 15px !important; /* 強制的に小さく！ */
+    color: #666 !important;     /* 強制的にグレーに！ */
+    margin-left: 2px;
+    margin-top: -5px;            /* 「2」の肩あたりに来るよう調整 */
+    font-weight: normal;        /* 太字を解除 */
+}
+
 
 /* ====== カード（Card）のデザイン ====== */
 .math-card {

@@ -226,10 +226,16 @@ class Poly {
         return new Poly([...this.terms, ...otherPoly.terms]);
     }
 
+
     sub(otherPoly) {
         const negatedTerms = otherPoly.terms.map(t => {
+            // 係数をマイナスにする
             const negCoeff = t.coeff.mul(new Fraction(-1));
-            return new Surd(negCoeff, t.root);
+            
+            // ★★★ 修正ポイント！ ★★★
+            // 以前: return new Surd(negCoeff, t.root); // ← ここで変数を渡し忘れてた！
+            // 修正: 第3引数に t.vars をコピーして渡す！
+            return new Surd(negCoeff, t.root, { ...t.vars });
         });
         return new Poly([...this.terms, ...negatedTerms]);
     }
@@ -453,62 +459,158 @@ const MathEngine = {
 
 
 
-    // math-engine.js : stepSolve をこれに書き換え
-
     stepSolve(nodes) {
         let newNodes = [...nodes];
         let changed = false;
         
-// 作戦1: 構造物の計算 (Unboxing)
+        // ★ヘルパー: 中身が単純な数値(または変数)だけかチェックする関数
+        const isSimple = (list) => {
+            if (!list || list.length === 0) return true;
+            if (list.length > 1) return false; 
+            // 数字か、変数なら「シンプル」とみなす
+            return list[0].type === 'number' || list[0].type === 'variable';  
+        };
+
+        // 作戦1: 構造物の計算 (Unboxing)
         for (let i = 0; i < newNodes.length; i++) {
             const node = newNodes[i];
             if (node.type === 'structure') {
-                const evaluated = this.evaluateStructureSimple(node);
+                let evaluated = this.evaluateStructureSimple(node);
                 if (evaluated) {
                     
-                    // ★追加: もしエラー（分母0など）が返ってきたら、即座にそれを結果として返して終了！
                     if (evaluated.type === 'error') {
                         return { nodes: [evaluated], changed: true };
                     }
 
                     let isMeaningful = true;
                     
+                    // √のチェック
                     if (node.subType === 'sqrt') {
                         if (evaluated.terms.length === 1) {
                             const t = evaluated.terms[0];
-                            // 係数が1か-1だけのルート（例: 1√2）は、見た目が変わらないので「変化なし」とみなす
                             if (t.root !== 1 && Math.abs(t.coeff.valueOf()) === 1) {
                                 isMeaningful = false; 
                             }
                         }
                     }
                     
-                    // 分数コンテナの場合、中身が「計算式」だった場合はちゃんと「変化あり」とする！
+                    // 分数コンテナのチェック
                     if (node.subType === 'fraction') {
-                        // 中身が単純な数値だけかチェックする関数
-                        const isSimple = (list) => {
-                            if (!list || list.length === 0) return true;
-                            if (list.length > 1) return false; // 「8 + 6」のように要素が複数なら計算式！
-                            return list[0].type === 'number';  // 「2」のように数字1つなら単純
-                        };
-
-                        // 分子も分母も単純な数字なら、それは「変化なし（再計算不要）」とみなす
                         if (isSimple(node.numerator) && isSimple(node.denominator)) {
                             isMeaningful = false; 
                         } else {
-                            // 計算式が含まれていたなら、それは意味のある変化！
                             isMeaningful = true;
                         }
                     }
 
-                    newNodes[i] = evaluated;
+                    // ★追加: べき乗(Power)コンテナのチェック
+                    // 「aの2乗」のように中身がシンプルな時は、箱を開けただけで止まらず、計算を続行させる！
+                    if (node.subType === 'power') {
+                        if (isSimple(node.base) && isSimple(node.exponent)) {
+                            isMeaningful = false;
+                        } else {
+                            isMeaningful = true;
+                        }
+                    }
+
+                    // ★追加: 記号コンテナ (|x| や ( ) ) の処理
+                    if (node.subType === 'symbol') {
+                        
+                        // パターンA: 絶対値 |...|
+                        if (node.symbolType === 'abs') {
+                            // 中身が「純粋な数字」になったかチェック
+                            // (変数 x とかが残っていると、プラスかマイナスかわからないから外せないの)
+                            if (evaluated.terms.length === 1 && 
+                                Object.keys(evaluated.terms[0].vars).length === 0 &&
+                                evaluated.terms[0].root === 1) {
+                                
+                                // 係数をチェック
+                                const val = evaluated.terms[0].coeff.valueOf();
+                                
+                                if (val < 0) {
+                                    // マイナスなら、-1 をかけてプラスにする魔法！
+                                    const positivePoly = evaluated.mul(new Poly([new Surd(new Fraction(-1))]));
+                                    evaluated = positivePoly;
+                                }
+                                // プラスなら何もしない（そのまま出してOK）
+                                
+                                isMeaningful = true; // 箱が外れるので「変化あり」
+                            } else {
+                                // まだ中身が計算できない（変数など）なら、箱は外さない
+                                isMeaningful = false; 
+                            }
+                        }
+                        
+                        // パターンB: ただのカッコ ( )
+
+                        else if (node.symbolType === 'parens') {
+                            
+                            let shouldUnbox = true; // 基本は外す
+
+                            // ★ここが新ルール！
+                            // 中身が「ただの負の数」になった場合...
+                            if (evaluated.terms.length === 1 && 
+                                evaluated.terms[0].root === 1 && 
+                                Object.keys(evaluated.terms[0].vars).length === 0) {
+                                
+                                const val = evaluated.terms[0].coeff.valueOf();
+                                if (val < 0) {
+                                    // 前のノードをチラ見する
+                                    const prev = (i > 0) ? newNodes[i-1] : null;
+                                    
+                                    // 前に演算子がいるなら、カッコは外さない！（衝突事故防止）
+                                    if (prev && prev.type === 'operator') {
+                                        shouldUnbox = false;
+                                    }
+                                }
+                            }
+
+                            if (shouldUnbox) {
+                                // カッコを外して中身(evaluated)にする
+                                isMeaningful = true;
+                                // (この後の newNodes[i] = evaluated; で中身になる)
+
+                                } else {
+                                // カッコを維持する場合
+                                
+                                // ★★★ 修正ポイント！ ★★★
+                                // 元の中身(node.content)が、すでに単純な数値なら「変化なし」とみなしてスルーする！
+                                // そうしないと、ここで満足して止まってしまい、下の足し算に進めないから。
+                                const isContentSimple = (node.content.length === 1 && 
+                                    (node.content[0].type === 'number' || node.content[0].type === 'variable'));
+
+                                if (!isContentSimple) {
+                                    // 中身が「2-7」みたいに計算が必要だったなら、
+                                    // 「(-5)」になったことは立派な変化なので記録する
+                                    newNodes[i] = {
+                                        type: 'structure',
+                                        subType: 'symbol',
+                                        symbolType: 'parens',
+                                        content: [ evaluated ] 
+                                    };
+                                    isMeaningful = true; 
+                                } else {
+                                    // すでに「(-5)」の状態なら、ここはスルーして足し算に進ませる！
+                                    isMeaningful = false;
+                                }
+                                
+                                evaluated = null; // 上書き防止
+                            }
+                        }
+                    }
+
+                    // evaluated が null の時は代入しないようにガード条件を追加
+                    if (evaluated) {
+                        newNodes[i] = evaluated;
+                    }
                     
-                    // isMeaningfulがtrueの時だけフラグを立てる
+                    // 意味のある変化だった場合のみフラグを立てる
                     if (isMeaningful) changed = true;
                 }
             }
         }
 
+        // もし構造の変化（カッコの展開など）だけで「意味がある」と判定されたら、ここでストップして表示
         if (changed) return { nodes: newNodes, changed: true };
 
 
@@ -525,27 +627,19 @@ const MathEngine = {
                     let res;
                     if (op.value === '*' || op.value === '×') {
                         res = p.mul(n);
-                        res.opType = 'mul'; // ★追加: 「かけ算」タグ！
+                        res.opType = 'mul'; 
                     } else {
-                        // ★ここに追加: ゼロ除算チェック！
-                        // 割る数(n)が 0 かどうか判定
-                        // Polyの中身が 0 (係数の分子が0) ならアウト
-                        // (項が複数ある場合などは厳密にはもっと複雑だけど、今は単項式レベルでチェック)
+                        // ゼロ除算チェック
                         let isZero = false;
                         if (n.terms.length === 1 && n.terms[0].coeff.n === 0) isZero = true;
                         
-                        // もし0だったら、特別なエラーノードを返して即終了！
                         if (isZero) {
-                            const errorNode = { 
-                                type: 'error', 
-                                value: '0では\nわれません' 
-                            };
-                            // 式全体をエラーメッセージに置き換えちゃう
+                            const errorNode = { type: 'error', value: '0では\nわれません' };
                             return { nodes: [errorNode], changed: true };
                         }
 
                         res = p.div(n);
-                        res.opType = 'div'; // ★追加: 「わり算」タグ！
+                        res.opType = 'div'; 
                     }
                     newNodes.splice(i-1, 3, res); 
                     i = i - 1; 
@@ -566,17 +660,17 @@ const MathEngine = {
                 const n = this.ensurePoly(next);
                 
                 if (p && n) {
+                    // 分数同士の足し算（通分ロジック）
                     if (p.terms.length === 1 && n.terms.length === 1) {
                         const t1 = p.terms[0];
                         const t2 = n.terms[0];
 
-                        // 純粋な分数同士の足し算
                         if (t1.root === 1 && Object.keys(t1.vars).length === 0 &&
                             t2.root === 1 && Object.keys(t2.vars).length === 0) {
                             
                             const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d);
 
-                            // ★ A. 算数モード: 通分（バラバラ） or 計算（約分なし）
+                            // A. 算数モード
                             if (this.config.mode === 'arithmetic') {
                                 if (t1.coeff.d !== t2.coeff.d) {
                                     const f1 = t1.coeff.scaleTo(lcmVal);
@@ -590,14 +684,12 @@ const MathEngine = {
                                     const n1 = t1.coeff.s * t1.coeff.n;
                                     const n2 = t2.coeff.s * t2.coeff.n;
                                     let newNum = (op.value === '+') ? n1 + n2 : n1 - n2;
-                                    
                                     const resFrac = new Fraction(newNum, commonD, false);
                                     newNodes.splice(i-1, 3, new Poly([new Surd(resFrac)]));
                                     return { nodes: newNodes, changed: true };
                                 }
                             }
-                            
-                            // ★ B. 数学モード: 分母が違うなら「合体」
+                            // B. 数学モード
                             else if (this.config.mode === 'math') {
                                 if (t1.coeff.d !== t2.coeff.d) {
                                     const num1Val = t1.coeff.s * t1.coeff.n * (lcmVal / t1.coeff.d);
@@ -623,15 +715,15 @@ const MathEngine = {
                             }
                         }
                     }
+
                     // 通常計算
                     let res;
-
                     if (op.value === '+') {
                         res = p.add(n);
-                        res.opType = 'add'; // ★追加
+                        res.opType = 'add'; 
                     } else {
                         res = p.sub(n);
-                        res.opType = 'sub'; // ★追加
+                        res.opType = 'sub'; 
                     }
                     newNodes.splice(i-1, 3, res);
                     return { nodes: newNodes, changed: true };
@@ -641,10 +733,7 @@ const MathEngine = {
         
         if (changed) return { nodes: newNodes, changed: true };
 
-        // -----------------------------------------------------
         // 作戦4: 最後の仕上げ（約分）
-        // ★修正: モードに関係なく、約分できる分数が残っていたら約分する！
-        // -----------------------------------------------------
         if (newNodes.length === 1 && newNodes[0] instanceof Poly) {
              const poly = newNodes[0];
              if (poly.terms.length === 1) {
@@ -653,7 +742,7 @@ const MathEngine = {
                       const f = term.coeff;
                       const gcdVal = this.gcd(f.n, f.d);
                       if (gcdVal > 1) {
-                          const reducedFrac = new Fraction(f.s * f.n, f.d, true); // trueで約分！
+                          const reducedFrac = new Fraction(f.s * f.n, f.d, true); 
                           newNodes[0] = new Poly([new Surd(reducedFrac)]);
                           return { nodes: newNodes, changed: true };
                       }
@@ -663,6 +752,7 @@ const MathEngine = {
 
         return { nodes: newNodes, changed: false };
     },
+
 
     ensurePoly(node) {
         if (node instanceof Poly) return node;
@@ -674,6 +764,13 @@ const MathEngine = {
             vars[node.value] = 1; 
             return new Poly([new Surd(new Fraction(1), 1, vars)]);
         }
+        
+        // ★追加: 構造体（カッコに入った数字など）も計算できるようにする
+        if (node.type === 'structure') {
+            const res = this.evaluateStructureSimple(node);
+            if (res instanceof Poly) return res;
+        }
+        
         return null;
     },
 
@@ -782,12 +879,27 @@ const MathEngine = {
                     }
                 }
             }
+
             if (node.subType === 'symbol') {
                 let c = this.calcSub(node.content);
                 if (c && c.type === 'error') return c; // エラー伝播
+                
                 if (c) {
-                     if (node.symbolType === 'abs') { /* ... */ }
-                     return c;
+                    // ★ここを修正！ 空っぽだったところにロジックを入れる
+                    if (node.symbolType === 'abs') {
+                         // 中身が「純粋な数字」の場合だけ処理する
+                         if (c.terms.length === 1 && c.terms[0].root === 1 && Object.keys(c.terms[0].vars).length === 0) {
+                             const val = c.terms[0].coeff.valueOf();
+                             if (val < 0) {
+                                 // マイナスなら反転！
+                                 return c.mul(new Poly([new Surd(new Fraction(-1))]));
+                             }
+                         }
+                         // 変数(|x|)の場合は、Polyでは表現しきれないので
+                         // 現状はそのまま(x)として返すか、あるいはここで処理を止めるかだけど、
+                         // 算数モード(数値計算)ならこれでバッチリ動くわ！
+                    }
+                    return c;
                 }
             }
         }

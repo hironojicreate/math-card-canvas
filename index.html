@@ -66,15 +66,34 @@
                 <button class="btn-create btn-var" data-type="variable">c</button>
                 <button class="btn-create btn-var btn-const" data-type="variable">i</button>
 
+                <div class="grid-head">はこ（コンテナ）</div>
 
-                <div class="grid-head">構造・コンテナ</div>
-                <button class="btn-create btn-struct" data-type="structure">分数</button>
-                <button class="btn-create btn-struct" data-type="structure">|x|</button>
-                <button class="btn-create btn-struct" data-type="operator">√</button>
-                <button class="btn-create btn-struct" data-type="operator">^○乗</button>
-                
-                <button class="btn-create btn-struct span-2-col" data-type="structure">( )</button>
-                <div class="empty-cell span-2-col"></div>
+                <button class="btn-create btn-struct" data-type="structure" data-value="分数">
+                    <div class="btn-visual-fraction">
+                        <span>□</span>
+                        <span class="btn-frac-line"></span>
+                        <span>□</span>
+                    </div>
+                </button>
+
+                <button class="btn-create btn-struct" data-type="structure" data-value="( )">( )</button>
+
+                <button class="btn-create btn-struct" data-type="structure" data-value="power">
+                    <div class="btn-visual-power">
+                        <span class="power-base">2</span>
+                        <span class="power-sup">○乗</span>
+                    </div>
+                </button>
+
+                <div class="empty-cell"></div>
+
+
+                <button class="btn-create btn-struct" data-type="operator" data-value="√">√</button>
+
+                <button class="btn-create btn-struct" data-type="structure" data-value="|x|">|x|</button>
+
+                <div class="empty-cell"></div>
+                <div class="empty-cell"></div>
 
 
                 <div class="grid-head">基本キー</div>

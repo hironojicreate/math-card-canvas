@@ -248,7 +248,6 @@ createDOM() {
 const CardMaker = {
     // ノードリスト(Array of Poly/Operator)を受け取り、カード要素の配列を返す
 
-
     createFromNodes(nodes) {
         const elements = [];
         
@@ -273,14 +272,13 @@ const CardMaker = {
             else if (node.type === 'variable') {
                 elements.push(new MathCard('variable', node.value, 0, 0).element);
             }
-            // ★追加: 生の構造データ(Structure)が来ても表示できるようにする！
+            // 生の構造データ(Structure)が来ても表示できるようにする！
             else if (node.type === 'structure') {
                 if (node.subType === 'fraction') {
                     // 分数の器を作る
                     const fracCard = new MathCard('structure', '分数', 0, 0).element;
                     
                     // 中身（分子・分母）を再帰的に作る！
-                    // ここがミソ。「8 + 6」みたいなリストをもう一度 createFromNodes に通すの。
                     const numElems = this.createFromNodes(node.numerator);
                     const denElems = this.createFromNodes(node.denominator);
                     
@@ -299,15 +297,31 @@ const CardMaker = {
                     
                     elements.push(fracCard);
                 }
-                // 必要なら他の構造(sqrtなど)もここに追加できるわ
+                // ★追加: 記号コンテナ (|x|, ( )) の生成
+                else if (node.subType === 'symbol') {
+                    const label = (node.symbolType === 'abs') ? '|x|' : '( )';
+                    const card = new MathCard('structure', label, 0, 0).element;
+                    
+                    const slot = card.querySelector('.card-slot');
+                    if (slot) {
+                        const children = this.createFromNodes(node.content);
+                        children.forEach(el => {
+                            el.style.position = 'static';
+                            el.style.transform = 'scale(0.9)';
+                            el.style.margin = '0 2px';
+                            slot.appendChild(el);
+                        });
+                    }
+                    elements.push(card);
+                }
+                // 必要なら他の構造(sqrt, powerなど)もここに追加できるわ
+            }
+            else if (node.type === 'error') {
+                const errCard = new MathCard('error', node.value, 0, 0).element;
+                elements.push(errCard);
             }
             else {
                 console.warn("Unknown node type in CardMaker:", node);
-            }
-
-            if (node.type === 'error') {
-                const errCard = new MathCard('error', node.value, 0, 0).element;
-                elements.push(errCard);
             }
 
         });
@@ -944,17 +958,24 @@ const App = {
         }
 
         // --- ボタンクリック処理にログを追加 ---
+
         const buttons = document.querySelectorAll('button[data-type]');
         buttons.forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
                 
-                // データ取得
-                const value = btn.innerText;
+                // ★修正ポイント: 
+                // data-value属性があればそれを使い、なければ従来どおりinnerTextを使う
+                // これで見た目が変わってもプログラムは大丈夫！
+                let value = btn.getAttribute('data-value');
+                if (!value) {
+                    value = btn.innerText;
+                }
+
                 const type = btn.getAttribute('data-type');
                 
-                // ログに出す
-                this.log(`Input: [${value}] (type: ${type})`);
+                // ログに出す（改行などは見づらいので除去して表示）
+                this.log(`Input: [${value.replace(/\n/g, '')}] (type: ${type})`);
                 
                 this.handleInput(type, value);
             };
@@ -1325,23 +1346,27 @@ const App = {
             }
         }
         
+
         // --- 4. それ以外（演算子、コンテナなど） ---
         else {
             this.commitInput(); 
 
-            // 「＝」ボタンが押されたら、計算ステップを進める！
+            // 「＝」ボタン
             if (value === '=') {
                 this.generateNextStep();
                 return;
             }
 
-            if (value.includes('^') || type === 'power') {
+            // ★修正: べき乗ボタンの判定を data-value="power" に対応させる
+            if (value === 'power' || type === 'power') {
                 this.spawnCard('power', 'Power', 100, 100);
                 return;
             }
+            
             if (value.includes('式')) {
                 this.spawnCard('root', 'Root', 50, 50);
             } else {
+                // その他の通常のカード生成
                 this.spawnCard(type, value, 100, 100);
             }
         }
@@ -1428,15 +1453,18 @@ const App = {
 
         // ====== 無限ループ防止（間違い探し）チェック！ ======
         
-        // 1. 元の式のテキストを作る (例: "2x+3x")
-        // ※ cards はこのメソッドの冒頭で取得した「前の行のカードたち」
-        const inputStr = cards.map(c => c.textContent).join('').trim();
-        
-        // 2. 新しい式のテキストを作る (例: "5x")
-        const outputStr = newCardElements.map(e => e.textContent).join('').trim();
+        // 1. 文字列を綺麗にする関数（スペースや改行を全部消す！）
+        const normalize = (str) => str.replace(/\s+/g, '').trim();
 
-        // 3. 比較！全く同じなら「変化なし」とみなして撤収！
-        if (inputStr === outputStr) {
+        // 2. 元の式のテキストを作る
+        const inputStr = cards.map(c => c.textContent).join('');
+        
+        // 3. 新しい式のテキストを作る
+        const outputStr = newCardElements.map(e => e.textContent).join('');
+
+        // 4. 比較！見た目の文字情報が同じなら「変化なし」とみなして撤収！
+        // これで「内部データは変わったけど、見た目が同じ」ならストップできるわ。
+        if (normalize(inputStr) === normalize(outputStr)) {
             this.log("Converged (Visual match) 🛑");
             newRootCard.element.remove(); // 作った器を消す
             this.clearFocus(); // 選択解除
@@ -1514,16 +1542,56 @@ const App = {
         // 「入力確定時」という仕様なら、ifの中でOK
     },
 
+
     setupAccordion() {
         const headers = document.querySelectorAll('.grid-head');
-        headers.forEach(header => {
-            header.onclick = () => {
-                header.classList.toggle('closed');
-                let nextElem = header.nextElementSibling;
-                while (nextElem && !nextElem.classList.contains('grid-head')) {
-                    nextElem.classList.toggle('hidden-btn');
-                    nextElem = nextElem.nextElementSibling;
+        
+        // ヘルパー: セクションの開閉を実行する関数
+        const toggleSection = (header, isOpen) => {
+            if (isOpen) {
+                header.classList.remove('closed');
+            } else {
+                header.classList.add('closed');
+            }
+
+            let nextElem = header.nextElementSibling;
+            // 次の見出しが来るまで、中身のボタンを隠したり出したりする
+            while (nextElem && !nextElem.classList.contains('grid-head')) {
+                if (isOpen) {
+                    nextElem.classList.remove('hidden-btn');
+                } else {
+                    nextElem.classList.add('hidden-btn');
                 }
+                nextElem = nextElem.nextElementSibling;
+            }
+        };
+
+        // 1. 初期化（保存された状態を復元）
+        headers.forEach(header => {
+            const key = header.innerText.trim();
+            // 記録がない場合は「開く(true)」がデフォルト
+            let isOpen = true;
+            
+            if (this.state.accordionState && typeof this.state.accordionState[key] !== 'undefined') {
+                isOpen = this.state.accordionState[key];
+            }
+
+            // もし「閉じる」記録があったら、最初から閉じておく
+            if (!isOpen) {
+                toggleSection(header, false);
+            }
+
+            // 2. クリックイベントの設定
+            header.onclick = () => {
+                const isCurrentlyClosed = header.classList.contains('closed');
+                const newState = isCurrentlyClosed; // 閉じてたら開く(true)、開いてたら閉じる(false)
+
+                toggleSection(header, newState);
+
+                // 状態を記録して保存
+                if (!this.state.accordionState) this.state.accordionState = {};
+                this.state.accordionState[key] = newState;
+                this.saveConfig();
             };
         });
     },
@@ -2324,9 +2392,12 @@ if (container.classList.contains('container-fraction')) {
                 
                 if (config.appMode) this.state.appMode = config.appMode;
 
-                // ★追加: 保存した設定があれば復元する！
                 if (config.displayMode) this.state.displayMode = config.displayMode;
                 if (config.fractionMode) this.state.fractionMode = config.fractionMode;
+
+                if (config.accordionState) {
+                    this.state.accordionState = config.accordionState;
+                }
 
                 this.log("Config Loaded from Storage");
             } catch (e) { console.error("Config Load Error", e); }
@@ -2341,10 +2412,10 @@ if (container.classList.contains('container-fraction')) {
             showInfo: this.state.configShowInfo,
             
             appMode: this.state.appMode,
-            
-            // ★追加: この2つも保存リストに入れる！
+
             displayMode: this.state.displayMode,
-            fractionMode: this.state.fractionMode
+            fractionMode: this.state.fractionMode,
+            accordionState: this.state.accordionState || {}
         };
         localStorage.setItem('math-card-config', JSON.stringify(config));
     },
