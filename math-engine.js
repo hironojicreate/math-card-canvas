@@ -304,6 +304,20 @@ class Poly {
 }
 
 
+
+// ====== 定数定義 ======
+const REDUCTION_COLORS = [
+    '#e74c3c', // 赤
+    '#3498db', // 青
+    '#2ecc71', // 緑
+    '#9b59b6', // 紫
+    '#e67e22', // オレンジ
+    '#1abc9c', // エメラルド
+    '#f368e0'  // ピンク
+];
+
+
+
 // ---------------------------------------------------------
 // 4. MathEngine (ステップ実行対応版)
 // ---------------------------------------------------------
@@ -322,16 +336,40 @@ const MathEngine = {
 
     // --- Phase 1: Parser ---
 
+
+    // --- Phase 1: Parser (メモ読み取り対応版) ---
+
     parse(cardElements) {
         let parsedNodes = [];
         let numberBuffer = ""; 
         let pendingNegative = false;
+        
+        // ★追加: 数字カードについている「色」や「約分値」のメモを一時保存する場所
+        let pendingMetadata = null;
 
         const flushBuffer = () => {
             if (numberBuffer !== "") {
                 let val = parseFloat(numberBuffer);
                 if (pendingNegative) { val = -val; pendingNegative = false; }
+                
                 const numNode = { type: 'number', value: val };
+                
+                // ★追加: メモがあったら、ノードに復元する！
+                if (pendingMetadata) {
+                    // reducedValue は文字列で保存されているので数値に戻す
+                    if (pendingMetadata.reducedValue) {
+                        numNode.reducedValue = parseFloat(pendingMetadata.reducedValue);
+                    }
+                    if (pendingMetadata.color) {
+                        numNode.color = pendingMetadata.color;
+                    }
+                    if (pendingMetadata.strike) {
+                        numNode.strike = true;
+                    }
+                    // 使い終わったらクリア
+                    pendingMetadata = null;
+                }
+
                 checkImplicit(numNode);
                 parsedNodes.push(numNode);
                 numberBuffer = "";
@@ -407,7 +445,24 @@ const MathEngine = {
                 parsedNodes.push({ type: type, value: v }); return;
             }
             
-            if (type === 'number') { numberBuffer += this.extractValue(card); }
+            if (type === 'number') { 
+                // ★追加: カードからメモ（dataset）を吸い上げる
+                // (複数桁の数字の場合、どれか1つのカードに情報があればOKとする)
+                if (card.dataset.reducedValue) {
+                    if (!pendingMetadata) pendingMetadata = {};
+                    pendingMetadata.reducedValue = card.dataset.reducedValue;
+                }
+                if (card.dataset.color) {
+                    if (!pendingMetadata) pendingMetadata = {};
+                    pendingMetadata.color = card.dataset.color;
+                }
+                if (card.dataset.strike) {
+                    if (!pendingMetadata) pendingMetadata = {};
+                    pendingMetadata.strike = true;
+                }
+
+                numberBuffer += this.extractValue(card); 
+            }
             
             if (type === 'variable') {
                 flushBuffer();
@@ -427,7 +482,7 @@ const MathEngine = {
         }
         return parsedNodes;
     },
-
+    
     // =========================================================
     // Phase 2 Final: Step-by-Step Logic
     // =========================================================
@@ -502,6 +557,33 @@ const MathEngine = {
                 }
             }
 
+            // 計算してしまう前に、「ビジュアル約分」のチャンスがないかチェック！
+            // これをしないと、せっかく並べた「3 × 5」がすぐに「15」になっちゃうの。
+
+            if (node.type === 'structure' && node.subType === 'fraction') {
+                
+                // 隣に「＋」や「－」があるか確認する
+                let isPartOfAddSub = false;
+                
+                if (i > 0) {
+                    const prev = newNodes[i-1];
+                    if (prev.type === 'operator' && ['+', '-'].includes(prev.value)) isPartOfAddSub = true;
+                }
+                if (i < newNodes.length - 1) {
+                    const next = newNodes[i+1];
+                    if (next.type === 'operator' && ['+', '-'].includes(next.value)) isPartOfAddSub = true;
+                }
+
+                // 「足し算・引き算の途中じゃない」ときだけ、ビジュアル約分を試みる！
+                if (!isPartOfAddSub) {
+                    const reductionResult = this.findReductionPairs(node);
+                    if (reductionResult) {
+                        newNodes[i] = reductionResult;
+                        return { nodes: newNodes, changed: true };
+                    }
+                }
+            }
+
             if (node.type === 'structure') {
                 let evaluated = this.evaluateStructureSimple(node);
                 if (evaluated) {
@@ -524,7 +606,20 @@ const MathEngine = {
                     
                     // 分数コンテナのチェック
                     if (node.subType === 'fraction') {
-                        if (isSimple(node.numerator) && isSimple(node.denominator)) {
+                        const isNumSimple = isSimple(node.numerator);
+                        const isDenSimple = isSimple(node.denominator);
+                        
+                        // ★修正: 分母が「1」かどうかチェック
+                        const isDenOne = (
+                            node.denominator && 
+                            node.denominator.length === 1 && 
+                            node.denominator[0].type === 'number' && 
+                            node.denominator[0].value === 1
+                        );
+
+                        // 「中身が単純」かつ「分母が1じゃない」ときだけ、計算を保留（スルー）する。
+                        // つまり、分母が1なら保留せずに「計算実行（整数化）」に進む！
+                        if (isNumSimple && isDenSimple && !isDenOne) {
                             isMeaningful = false; 
                         } else {
                             isMeaningful = true;
@@ -627,13 +722,10 @@ const MathEngine = {
                         }
                     }
 
-                    // evaluated が null の時は代入しないようにガード条件を追加
-                    if (evaluated) {
+                    if (isMeaningful && evaluated) {
                         newNodes[i] = evaluated;
+                        changed = true;
                     }
-                    
-                    // 意味のある変化だった場合のみフラグを立てる
-                    if (isMeaningful) changed = true;
                 }
             }
         }
@@ -642,63 +734,37 @@ const MathEngine = {
         if (changed) return { nodes: newNodes, changed: true };
 
 
-        // 作戦2: 掛け算・割り算 (*, /)
+        // 作戦2: 掛け算・割り算 (*, /) - 分数チェーン対応版
         for (let i = 1; i < newNodes.length - 1; i++) {
             const op = newNodes[i];
             if (op.type === 'operator' && ['*', '×', '/', '÷'].includes(op.value)) {
+                
+                // 1. まず「分数チェーン」として一括処理を試みる
+                const chainResult = this.solveFractionChain(newNodes, i);
+                if (chainResult) {
+                    return { nodes: chainResult.nodes, changed: true };
+                }
+
+                // 2. ★復活: 分数チェーンじゃなかった場合（ただの 2 × 3 など）の通常計算
+                // これがないと、分子の中の計算が進まなくなっちゃうの！
                 const prev = newNodes[i-1];
                 const next = newNodes[i+1];
                 const p = this.ensurePoly(prev);
                 const n = this.ensurePoly(next);
-                
+
                 if (p && n) {
                     let res;
+                    // 掛け算
                     if (op.value === '*' || op.value === '×') {
                         res = p.mul(n);
-                        res.opType = 'mul'; 
-                    } else {
-                        // ゼロ除算チェック
-                        let isZero = false;
-                        if (n.terms.length === 1 && n.terms[0].coeff.n === 0) isZero = true;
-                        
-                        if (isZero) {
-                            const errorNode = { type: 'error', value: '0では\nわれません' };
-                            return { nodes: [errorNode], changed: true };
-                        }
-
-                        // ★ここから修正！ 正しい「余り」を計算してメモする処理
-                        // 単純な数値同士の割り算なら、余りを計算しておく
-                        if (p.terms.length === 1 && n.terms.length === 1 &&
-                            p.terms[0].root === 1 && Object.keys(p.terms[0].vars).length === 0 &&
-                            n.terms[0].root === 1 && Object.keys(n.terms[0].vars).length === 0) {
-                            
-                            const valA = p.terms[0].coeff; // 割られる数 (Fraction)
-                            const valB = n.terms[0].coeff; // 割る数 (Fraction)
-                            
-                            // 商(整数) = floor(A / B)
-                            const divVal = valA.div(valB);
-                            const quotient = Math.floor(divVal.valueOf());
-                            
-                            // 余り = A - B × 商
-                            const remFrac = valA.sub(valB.mul(new Fraction(quotient)));
-                            const remVal = remFrac.valueOf(); // 小数または整数
-                            
-                            // 通常の計算結果を作成
-                            res = p.div(n);
-                            
-                            // ★結果のPolyに「本当の余り」を貼り付けておく！
-                            res.remainderVal = remVal;
-                            
-                        } else {
-                            // 複雑な式なら普通に計算
-                            res = p.div(n);
-                        }
-
-                        res.opType = 'div'; 
+                    } 
+                    // 割り算
+                    else {
+                        res = p.div(n);
                     }
-                    newNodes.splice(i-1, 3, res); 
-                    i = i - 1; 
-                    changed = true;
+                    
+                    newNodes.splice(i-1, 3, res);
+                    return { nodes: newNodes, changed: true };
                 }
             }
         }
@@ -1026,6 +1092,323 @@ const MathEngine = {
             }
         }
         return null;
+    },
+
+
+    // ====== Phase 3.0: Fraction Chain Logic (大合体 & ビジュアル約分) ======
+
+    // 掛け算・割り算の連鎖を処理するリーダー関数
+    solveFractionChain(nodes, startIndex) {
+        // 1. チェーンの範囲を特定する
+        // startIndexにある演算子を中心に、左右に広がる *, / の連鎖を探す
+        let start = startIndex - 1;
+        let end = startIndex + 1;
+
+        // 左へ探索
+        while (start > 1 && 
+               nodes[start-1].type === 'operator' && 
+               ['*', '×', '/', '÷'].includes(nodes[start-1].value)) {
+            start -= 2;
+        }
+        // 右へ探索
+        while (end < nodes.length - 2 && 
+               nodes[end+1].type === 'operator' && 
+               ['*', '×', '/', '÷'].includes(nodes[end+1].value)) {
+            end += 2;
+        }
+
+        // 範囲内のノードを抽出
+        const chainNodes = nodes.slice(start, end + 1);
+
+        const hasFraction = chainNodes.some(n => n.type === 'structure' && n.subType === 'fraction');
+        if (!hasFraction) return null;
+
+        // --- Step A: 前処理（帯分数・整数の変換） ---
+        // チェーンの中に「帯分数」や「整数」が混じっていたら、まずは「仮分数」に統一する
+        for (let k = 0; k < chainNodes.length; k += 2) {
+            const item = chainNodes[k];
+            
+            // 整数なら分数(n/1)へ
+            if (item.type === 'number') {
+                const newNodes = [...nodes];
+                newNodes[start + k] = {
+                    type: 'structure', subType: 'fraction',
+                    numerator: [{ type: 'number', value: item.value }],
+                    denominator: [{ type: 'number', value: 1 }],
+                    integer: []
+                };
+                return { nodes: newNodes };
+            }
+
+            // 帯分数なら仮分数へ
+            if (item.type === 'structure' && item.subType === 'fraction') {
+                // 整数部分(integer)を持っているかチェック
+                if (item.integer && item.integer.length > 0 && item.integer[0].value !== 0) {
+                     // ここは既存のstepSolve冒頭のロジックが先に動くはずだけど、
+                     // 万が一のためにここでも検知したら変換を促す（あるいはここでやっちゃう）
+                     // 今回はstepSolve冒頭に任せるとして、ここはスルーでもいいけど、
+                     // 念のため「構造が整っていない」とみなしてリターンなし（stepSolve冒頭に任せる）
+                     return null; 
+                }
+            }
+        }
+        
+        // --- Step B: 大合体（Merge） ---
+        // まだ「巨大分数コンテナ」になっていないなら、合体させる！
+        // 条件: 演算子が一つでも残っていること
+        const hasOperator = chainNodes.some(n => n.type === 'operator');
+        
+        if (hasOperator) {
+            // 合体実行！
+            const mergedFraction = this.createMergedFraction(chainNodes);
+            
+            // ノード列を書き換え
+            const newNodes = [...nodes];
+            // chainNodesの範囲（start 〜 end）を、一つの mergedFraction に置き換える
+            newNodes.splice(start, (end - start + 1), mergedFraction);
+            
+            return { nodes: newNodes };
+        }
+
+        // --- Step C: ビジュアル約分（Visual Reduction） ---
+        // ここに来るということは、chainNodesは「1つの巨大な分数コンテナ」だけになっているはず
+        if (chainNodes.length === 1 && chainNodes[0].subType === 'fraction') {
+            const giant = chainNodes[0];
+            
+            // 分子・分母の掛け算リストを取得（まだ1つの数値になっていない場合）
+            // createMergedFractionで作った構造は、numerator/denominatorの中に
+            // [ {val:2}, {op:*}, {val:5} ... ] のような式が入っているはず
+            
+            const reductionResult = this.findReductionPairs(giant);
+            if (reductionResult) {
+                // 約分（色付け、または数値変更）があった場合
+                const newNodes = [...nodes];
+                newNodes[start] = reductionResult;
+                return { nodes: newNodes };
+            }
+            
+            // --- Step D: 最終計算（Final Calculation） ---
+            // 約分できるペアがもうないなら、分子・分母をそれぞれ計算して一つの数値にする
+            // または、1/1 などの整理を行う
+            
+            const numNodes = giant.numerator;
+            const denNodes = giant.denominator;
+            
+            // 計算が必要かチェック（演算子が含まれているか）
+            const numNeedsCalc = numNodes.some(n => n.type === 'operator');
+            const denNeedsCalc = denNodes.some(n => n.type === 'operator');
+            
+            if (numNeedsCalc || denNeedsCalc) {
+                // 分子・分母それぞれを計算（再帰的にcalculateを呼ぶか、ここで簡易計算するか）
+                // ここでは簡易的に「掛け算のみ」と仮定して計算
+                const calcList = (list) => {
+                    let product = 1;
+                    list.forEach(n => {
+                        if (n.type === 'number') product *= n.value;
+                    });
+                    return [{ type: 'number', value: product }];
+                };
+
+                const newGiant = {
+                    ...giant,
+                    numerator: numNeedsCalc ? calcList(numNodes) : numNodes,
+                    denominator: denNeedsCalc ? calcList(denNodes) : denNodes
+                };
+                
+                const newNodes = [...nodes];
+                newNodes[start] = newGiant;
+                return { nodes: newNodes };
+            }
+            
+            // 計算も終わっているなら、ここでの出番はなし（stepSolveの最後にある約分ロジックなどが動く）
+        }
+
+        return null;
+    },
+
+    // 複数の項を一つの巨大な分数にまとめる工場
+    createMergedFraction(chainNodes) {
+        let numList = [];
+        let denList = [];
+        
+        // 最初の項
+        let currentItem = chainNodes[0];
+        
+        // 最初の項の処理
+        if (currentItem.subType === 'fraction') {
+             // そのまま採用（スプレッド構文でコピー）
+             numList.push(...currentItem.numerator);
+             denList.push(...currentItem.denominator);
+        } else if (currentItem.type === 'number') {
+             numList.push(currentItem);
+             denList.push({ type: 'number', value: 1 });
+        } else {
+             // Polyなどの場合は簡易対応
+             numList.push({ type: 'number', value: 1 }); // 仮
+             denList.push({ type: 'number', value: 1 });
+        }
+
+        // 続く演算子と項を処理
+        for (let k = 1; k < chainNodes.length; k += 2) {
+            const op = chainNodes[k].value;
+            const item = chainNodes[k+1];
+            
+            let itemNum = [];
+            let itemDen = [];
+            
+            if (item.subType === 'fraction') {
+                itemNum = [...item.numerator];
+                itemDen = [...item.denominator];
+            } else if (item.type === 'number') {
+                itemNum = [{ type: 'number', value: item.value }];
+                itemDen = [{ type: 'number', value: 1 }];
+            }
+
+            // 掛け算なら「分子×分子」「分母×分母」
+            if (op === '*' || op === '×') {
+                numList.push({ type: 'operator', value: '×' });
+                numList.push(...itemNum);
+                
+                denList.push({ type: 'operator', value: '×' });
+                denList.push(...itemDen);
+            }
+            // 割り算なら「分子×分母」「分母×分子」（逆数！）
+            else if (op === '/' || op === '÷') {
+                numList.push({ type: 'operator', value: '×' });
+                numList.push(...itemDen); // 逆転！
+                
+                denList.push({ type: 'operator', value: '×' });
+                denList.push(...itemNum); // 逆転！
+            }
+        }
+        
+        return {
+            type: 'structure',
+            subType: 'fraction',
+            numerator: numList,
+            denominator: denList,
+            integer: []
+        };
+    },
+
+
+    // ビジュアル約分を行う名探偵（一網打尽バージョン）
+    findReductionPairs(fractionNode) {
+        const nums = fractionNode.numerator;
+        const dens = fractionNode.denominator;
+
+        // ルール違反防止！
+        // 分子または分母に「足し算・引き算」が含まれている場合は、
+        // 部分的な約分をしてはいけないので、何もせずに帰る。
+        // （例: (12 + 32) / 8 で、12と8だけ約分するのは数学的にNG！）
+        const hasAddSub = (list) => list.some(n => n.type === 'operator' && ['+', '-'].includes(n.value));
+        if (hasAddSub(nums) || hasAddSub(dens)) {
+            return null;
+        }
+        
+        // 1. まず「色付き（約分待ち）」があるかチェック
+        // あれば、それを「約分実行（値の更新）」して返す（ここは変更なし）
+        let hasColored = false;
+        
+        const applyReduction = (list) => {
+            return list.map(node => {
+                if (node.color && node.reducedValue !== undefined) {
+                    hasColored = true;
+                    // 色情報などを消して、新しい値にする
+                    return { type: 'number', value: node.reducedValue };
+                }
+                return node;
+            });
+        };
+
+        const newNums = applyReduction(nums);
+        const newDens = applyReduction(dens);
+        
+        if (hasColored) {
+            // ★追加: 約分した結果、分母が「1」になったら、分数コンテナを解除して整数にする！
+            // (これをしないと、7/1 のような状態がワンステップ表示されちゃうの)
+            const isDenOne = (newDens.length === 1 && newDens[0].value === 1);
+            const isNumSimple = (newNums.length === 1 && newNums[0].type === 'number');
+            
+            if (isDenOne && isNumSimple) {
+                // 分数構造をやめて、分子の値（整数）をそのまま返す
+                return { type: 'number', value: newNums[0].value };
+            }
+
+            return {
+                ...fractionNode,
+                numerator: newNums,
+                denominator: newDens
+            };
+        }
+
+        // --- 2. ここからペア探索（一括モード） ---
+        
+        // どのノードがすでにペアになったかを記録するフラグ配列
+        const usedNumIndices = new Array(nums.length).fill(false);
+        const usedDenIndices = new Array(dens.length).fill(false);
+        
+        let pairCount = 0; // 見つけたペアの数
+        
+        // 結果用のリストをコピー作成
+        const nextNums = [...nums];
+        const nextDens = [...dens];
+
+        for (let i = 0; i < nums.length; i++) {
+            // 数値でない、または1、または既に使用済みの場合はスキップ
+            if (nums[i].type !== 'number' || nums[i].value === 1 || usedNumIndices[i]) continue;
+            
+            for (let j = 0; j < dens.length; j++) {
+                // 数値でない、または1、または既に使用済みの場合はスキップ
+                if (dens[j].type !== 'number' || dens[j].value === 1 || usedDenIndices[j]) continue;
+                
+                // 公約数を計算
+                const valN = nums[i].value;
+                const valD = dens[j].value;
+                const commonDivisor = this.gcd(valN, valD);
+                
+                if (commonDivisor > 1) {
+                    // ★ペア発見！即リターンせずに、記録して次へ進む！
+                    
+                    // 色を決定（パレットを順番に使う）
+                    const color = REDUCTION_COLORS[pairCount % REDUCTION_COLORS.length];
+                    
+                    // 分子側の更新予約
+                    nextNums[i] = {
+                        ...nums[i],
+                        color: color,
+                        strike: true,
+                        reducedValue: valN / commonDivisor
+                    };
+                    usedNumIndices[i] = true; // 使用済みにする
+
+                    // 分母側の更新予約
+                    nextDens[j] = {
+                        ...dens[j],
+                        color: color,
+                        strike: true,
+                        reducedValue: valD / commonDivisor
+                    };
+                    usedDenIndices[j] = true; // 使用済みにする
+                    
+                    pairCount++;
+                    
+                    // この分子(nums[i])は相手が見つかったので、次の分子へ行くために内側ループを抜ける
+                    break; 
+                }
+            }
+        }
+        
+        // ペアが1つ以上見つかっていたら、変更ありとして返す
+        if (pairCount > 0) {
+            return {
+                ...fractionNode,
+                numerator: nextNums,
+                denominator: nextDens
+            };
+        }
+        
+        return null; // 約分できるペアなし
     },
 
     calcSub(nodes) {

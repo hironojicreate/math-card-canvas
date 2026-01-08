@@ -1459,3 +1459,40 @@ input:checked + .slider:before {
 
 /* ※注意: 親コンテナ自身（#wait-area直下の.math-card）は
    引き続き pointer-events: auto (通常) なので、ちゃんと掴んで動かせます！ */
+
+   /* ====== ビジュアル約分用のスタイル ====== */
+
+/* 斜め線 (Struck Through) */
+.struck-through {
+    position: relative; /* 擬似要素の基準にするため */
+}
+
+.struck-through::after {
+    content: "";
+    position: absolute;
+    
+    /* ど真ん中に配置 */
+    top: 50%;
+    left: 50%;
+    
+    /* 文字より少しだけ長くする */
+    width: 120%; 
+    height: 2px; /* 線の太さ */
+    
+    /* 文字色と同じ色にする（エンジンが決めた赤や青になる！） */
+    background-color: currentColor; 
+    
+    /* 中心を基準に45度回転させる */
+    transform: translate(-50%, -50%) rotate(-45deg);
+    
+    pointer-events: none; /* クリックの邪魔をしない */
+    opacity: 0.7; /* 数字が見えなくならないように少し透かす */
+    
+    /* アニメーション（お好みで）: 線がシュッと引かれる */
+    animation: slash-anim 0.3s ease-out forwards;
+}
+
+@keyframes slash-anim {
+    from { width: 0; opacity: 0; }
+    to   { width: 120%; opacity: 0.7; }
+}

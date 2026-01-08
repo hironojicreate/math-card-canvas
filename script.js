@@ -279,9 +279,34 @@ const CardMaker = {
             else if (node.type === 'operator') {
                 elements.push(new MathCard('operator', node.value, 0, 0).element);
             }
+
+
             else if (node.type === 'number') {
-                elements.push(new MathCard('number', node.value.toString(), 0, 0).element);
+                // カードを作成
+                const cardInstance = new MathCard('number', node.value.toString(), 0, 0);
+                const el = cardInstance.element;
+
+                // ★追加：エンジンからの「色指定」があれば適用 & メモに残す！
+                if (node.color) {
+                    el.style.color = node.color;
+                    el.style.fontWeight = 'bold';
+                    el.dataset.color = node.color; // ★ここが大事！HTMLにメモを残す
+                }
+
+                // ★追加：エンジンからの「約分後の値」があればメモに残す！
+                if (node.reducedValue !== undefined) {
+                    el.dataset.reducedValue = node.reducedValue; // ★ここが大事！
+                }
+
+                // エンジンからの「斜め線指定」があればクラス付与
+                if (node.strike) {
+                    el.classList.add('struck-through');
+                    el.dataset.strike = "true"; // ★念のためこれも
+                }
+
+                elements.push(el);
             }
+
             else if (node.type === 'variable') {
                 elements.push(new MathCard('variable', node.value, 0, 0).element);
             }
@@ -1431,11 +1456,10 @@ const App = {
     },
 
 
+
     // ★重要: 「＝」ボタンが押された時のメイン処理
-    // 今の行を計算して、新しい行（答えカード）を下に生み出すの！
     generateNextStep() {
-        // 1. ターゲットを探す（今フォーカスしているスロットの親コンテナ）
-        // ※「式コンテナ(container-root)」に入っていることを前提にするわ
+        // 1. ターゲットを探す
         if (!this.state.activeSlot) {
             this.log("Target? : Please select a formula first.");
             return;
@@ -1448,7 +1472,6 @@ const App = {
         }
 
         // 2. 中身を解析する (Parse)
-        // root-slot の中にあるカードたちを取得
         const rootSlot = currentRoot.querySelector('.root-slot');
         if (!rootSlot) return;
         
@@ -1457,95 +1480,52 @@ const App = {
 
         if (cards.length === 0) return;
 
-
-        // ====== ★修正：空気読みモード切り替え (Auto Mode Switcher) ======
-        // ユーザーの意思（あまりモード）を尊重しつつ、形式が変わった時だけサポートするの。
-
-        // 1. 今「あまりモード」なら、何もしない（ユーザーがそこにとどまりたいはずだから）
+        // ====== 空気読みモード切り替え (Auto Mode Switcher) ======
         if (this.state.displayMode !== 'remainder') {
-            
             let hasDecimal = false;
             let hasFraction = false;
-
             cards.forEach(card => {
-                // 分数コンテナがあるか？
-                if (card.classList.contains('container-fraction')) {
-                    hasFraction = true;
-                }
-                // 数字カードの中に「.」が含まれているか？
-                if (card.classList.contains('card-number') && card.innerText.includes('.')) {
-                    hasDecimal = true;
-                }
+                if (card.classList.contains('container-fraction')) hasFraction = true;
+                if (card.classList.contains('card-number') && card.innerText.includes('.')) hasDecimal = true;
             });
-
-            // 判定ロジック
             let newMode = null;
+            if (hasFraction) newMode = 'fraction';
+            else if (hasDecimal && this.state.displayMode === 'fraction') newMode = 'decimal';
 
-            if (hasFraction) {
-                // 分数が登場したら、さすがに分数モードの方が見やすいわ
-                newMode = 'fraction';
-            } else if (hasDecimal) {
-                // 分数がなくて、小数が登場した時
-                // ★ここがポイント：今は「分数モード」で、かつ「小数」が出てきた時だけ「小数モード」へ誘導する
-                // (もし既に小数モードならそのままでいいし)
-                if (this.state.displayMode === 'fraction') {
-                    newMode = 'decimal';
-                }
-            }
-
-            // モード変更を実行！
             if (newMode && this.state.displayMode !== newMode) {
                 this.state.displayMode = newMode;
-                
-                // エンジンとボタンの表示も同期させる
-                if (typeof MathEngine !== 'undefined') {
-                    MathEngine.config.displayMode = newMode;
-                }
+                if (typeof MathEngine !== 'undefined') MathEngine.config.displayMode = newMode;
                 this.updateDisplayButtonLabel();
                 this.log(`Auto Mode Switch: ${newMode}`);
             }
         }
-        // ===================================================================
+        // =========================================================
 
-        // エンジンに読ませる
         const nodes = MathEngine.parse(cards);
         
-        // 3. 1歩だけ計算する (Step Solve)
-        // ★ここで「一斉射撃」が行われるわ！
+        // 3. 1歩だけ計算する
         const result = MathEngine.stepSolve(nodes);
         
-        // 変化がなければ終了（これ以上計算できない）
         if (!result.changed) {
             this.log("Complete! (No more steps)");
-            
-            // 完了の合図として、コンテナの選択状態を外してあげる等の演出があってもいいかも
             this.clearFocus();
             return;
         }
 
-// ====== 4. 新しい行を作る & 右揃えの魔法 ======
-        
+        // 4. 新しい行を作る
         const rect = currentRoot.getBoundingClientRect();
         const field = document.getElementById(FIELD_ID);
         const fieldRect = field.getBoundingClientRect();
         
-        // A. 基準となる「右端」の座標を計算 (フィールド基準)
-        // 親の左座標 + 親の幅 = 親の右端座標
-        // そこからフィールドの左ズレを引き、スクロール分を足す
         const currentRight = (rect.left + rect.width) - fieldRect.left + field.scrollLeft;
-        
-        // B. Y座標 (高さ) はこれまで通り「真下 + 隙間」
         const currentTop  = rect.top - fieldRect.top + field.scrollTop;
-        const newY = currentTop + rect.height + 15; // 15pxの隙間
+        const newY = currentTop + rect.height + 15;
 
-        // C. 新しいカードを生成
-        // ★ポイント: X座標は一旦適当(0)で作っておくの。
-        // 中身を入れて幅が決まってから、正しい位置にズラすわ！
         const newRootCard = new MathCard('root', 'Root', 0, newY);
         newRootCard.element._resultNodes = result.nodes;
         field.appendChild(newRootCard.element);
         
-        // 5. 中身を埋める (Generate)
+        // 5. 中身を埋める
         const newRootSlot = newRootCard.element.querySelector('.root-slot');
         
         // (A) 「＝」カード
@@ -1559,26 +1539,8 @@ const App = {
         // (B) 計算結果のカードたち
         const newCardElements = CardMaker.createFromNodes(result.nodes);
 
-        // ====== 無限ループ防止（間違い探し）チェック！ ======
-        
-        // 1. 文字列を綺麗にする関数（スペースや改行を全部消す！）
-        const normalize = (str) => str.replace(/\s+/g, '').trim();
-
-        // 2. 元の式のテキストを作る
-        const inputStr = cards.map(c => c.textContent).join('');
-        
-        // 3. 新しい式のテキストを作る
-        const outputStr = newCardElements.map(e => e.textContent).join('');
-
-        // 4. 比較！見た目の文字情報が同じなら「変化なし」とみなして撤収！
-        // これで「内部データは変わったけど、見た目が同じ」ならストップできるわ。
-        if (normalize(inputStr) === normalize(outputStr)) {
-            this.log("Converged (Visual match) 🛑");
-            newRootCard.element.remove(); // 作った器を消す
-            this.clearFocus(); // 選択解除
-            return;
-        }
-        // ========================================================
+        // ★★★ ここにあった「無限ループ防止チェック」は完全に削除したわ！ ★★★
+        // もう二度と邪魔はさせないの！
 
         newCardElements.forEach(elem => {
             newRootSlot.appendChild(elem);
@@ -1587,22 +1549,113 @@ const App = {
             elem.style.margin = '0 2px';
         });
 
-        // ====== ★ここで位置合わせ実行！ ======
-        // DOMに追加したことで、新しいカードの「幅」が確定しているはずよ。
+        // 位置合わせ
         const newWidth = newRootCard.element.offsetWidth;
-        
-        // 「親の右端」に「自分の右端」を合わせるには……
-        // 左位置 = 親の右端 - 自分の幅
         const newX = currentRight - newWidth;
-        
-        // 計算した座標をセット！
         newRootCard.element.style.left = `${newX}px`;
-        newRootCard.element.style.position = 'absolute'; // 念のため
+        newRootCard.element.style.position = 'absolute';
 
         // 6. 仕上げ
         this.focusInitialSlot(newRootCard.element);
         this.updateAllMinusStyles();
+        
+        // ★修正版の魔法を呼び出す！
+        this.tryAutoVisualReduction(newRootCard.element, result.nodes);
+        
         this.log("Step Generated! (Right Aligned) 🌰");
+    },
+
+
+    // ★修正版: 0.5秒後に色をつける魔法（Poly対応版！）
+    tryAutoVisualReduction(cardElement, nodes) {
+        if (nodes.length !== 1) return;
+
+        let fractionNode = null;
+
+        // パターンA: 構造体としての分数 (Fraction Structure)
+        if (nodes[0].type === 'structure' && nodes[0].subType === 'fraction') {
+            fractionNode = nodes[0];
+        }
+        // パターンB: 計算結果としてのPoly (Poly Object) ★ここを追加！
+        else if (nodes[0] instanceof Poly) {
+             const poly = nodes[0];
+             // 項が1つだけの時
+             if (poly.terms.length === 1) {
+                 const term = poly.terms[0];
+                 // シンプルな数字だけの分数かチェック (ルートや変数がないこと)
+                 if (term.root === 1 && Object.keys(term.vars).length === 0) {
+                      const nVal = term.coeff.n * term.coeff.s;
+                      const dVal = term.coeff.d;
+                      
+                      // 分母が1より大きい（分数である）場合のみ対象
+                      if (dVal > 1) {
+                          // エンジンが理解できる「構造体」のフリをする
+                          fractionNode = {
+                              type: 'structure', 
+                              subType: 'fraction',
+                              numerator: [{ type: 'number', value: nVal }],
+                              denominator: [{ type: 'number', value: dVal }]
+                          };
+                      }
+                 }
+             }
+        }
+
+        if (!fractionNode) return;
+
+        // エンジンの名探偵に「約分ペアはある？」と聞く
+        if (typeof MathEngine !== 'undefined') {
+            const visualResult = MathEngine.findReductionPairs(fractionNode);
+            
+            // もし約分ペアが見つかったら...
+            if (visualResult) {
+                this.log("Auto Reduction: Scheduled in 0.5s...");
+
+                setTimeout(() => {
+                    // DOM要素を直接いじって、色と斜め線をつける！
+                    const fracContainer = cardElement.querySelector('.container-fraction');
+                    if (!fracContainer) return;
+
+                    const applyStyles = (slotClass, list) => {
+                        const slot = fracContainer.querySelector(`.${slotClass}`);
+                        if (!slot) return;
+                        
+                        // Polyの場合でも、CardMakerは同じ構造(.numerator/.denominator)で作ってくれているから、
+                        // このセレクタでちゃんと要素が見つかるの！
+                        const cardElems = Array.from(slot.querySelectorAll(':scope > .card-number'));
+                        let cardIndex = 0;
+                        
+                        list.forEach(node => {
+                            if (node.type === 'number') {
+                                const el = cardElems[cardIndex];
+                                if (el) {
+                                    if (node.color) {
+                                        el.style.transition = 'color 0.5s, text-decoration 0.5s'; 
+                                        el.style.color = node.color;
+                                        el.style.fontWeight = 'bold';
+                                        el.dataset.color = node.color; 
+                                    }
+                                    if (node.strike) {
+                                        el.classList.add('struck-through');
+                                        el.dataset.strike = "true"; 
+                                    }
+                                    if (node.reducedValue !== undefined) {
+                                        el.dataset.reducedValue = node.reducedValue;
+                                    }
+                                }
+                                cardIndex++;
+                            }
+                        });
+                    };
+
+                    applyStyles('numerator', visualResult.numerator);
+                    applyStyles('denominator', visualResult.denominator);
+                    
+                    this.log("Auto Reduction: Applied! ✨");
+
+                }, 500); // 0.5秒待機
+            }
+        }
     },
 
     // 編集モードを開始する
