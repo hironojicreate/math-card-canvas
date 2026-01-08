@@ -131,11 +131,24 @@ createDOM() {
                 // 特例：「あまり」という文字なら、横長クラスを追加！
                 if (this.value === 'あまり') {
                     el.classList.add('card-remainder');
+                    el.innerText = this.value;
+                }
+
+                else if (this.value === '-') {
+                    el.classList.add('visual-minus');
+                    // 文字だけを操作するために span で囲む
+                    el.innerHTML = '<span class="minus-content">-</span>';
+                } else {
+                    // それ以外は通常通り
+                    el.innerText = this.value;
                 }
             }
             
             else if (this.type === 'variable') el.classList.add('card-variable');
-            el.innerText = this.value;
+            
+            if (this.type === 'variable' || this.type === 'number') {
+                el.innerText = this.value;
+            }
     }
 
 
@@ -259,7 +272,7 @@ const CardMaker = {
                         const opVal = term.coeff.s >= 0 ? '+' : '-';
                         elements.push(new MathCard('operator', opVal, 0, 0).element);
                     }
-                    const termElems = this.surdToElements(term, index === 0);
+                    const termElems = this.surdToElements(term, index === 0, node.remainderVal);
                     elements.push(...termElems);
                 });
             }
@@ -331,7 +344,8 @@ const CardMaker = {
  
     // Surd (coeff * √root * vars) をカード要素に変換
 
-    surdToElements(surd, isFirstTerm) {
+
+    surdToElements(surd, isFirstTerm, customRemainder) {
         const elems = [];
         
         // 自動約分阻止 (false) はそのまま！
@@ -342,14 +356,23 @@ const CardMaker = {
         const hasVars = varKeys.length > 0;
         const hasRoot = surd.root !== 1;
 
+        // ★追加: 純粋な数字（変数やルートがない）かどうか
+        const isPureNumber = !hasVars && !hasRoot;
+
         // ★新ロジック: マイナスを数字カードに合体させるか判定
         // 条件: 
         // 1. 先頭の項である (isFirstTerm)
         // 2. 係数がマイナスである (surd.coeff.s < 0)
-        // 3. 分母が1の整数である (absCoeff.d === 1)
-        // 4. 変数やルートがない単純な数である (!hasVars && !hasRoot)
-        const isPureInteger = (absCoeff.d === 1 && !hasVars && !hasRoot);
-        const shouldMergeSign = (isFirstTerm && surd.coeff.s < 0 && isPureInteger);
+        // 3. 変数やルートがない単純な数である (!hasVars && !hasRoot)
+        // 4. 「整数(分母1)」 または 「純粋な数字 かつ 小数モード」 の場合
+        const isDecimalMode = (App.state.displayMode === 'decimal');
+        
+        const shouldMergeSign = (
+            isFirstTerm && 
+            surd.coeff.s < 0 && 
+            isPureNumber &&
+            (absCoeff.d === 1 || isDecimalMode) // ← ここがポイント！小数モードなら分母に関係なく合体！
+        );
 
         // --- 符号の処理 ---
         // 先頭のマイナス、かつ「マージしない」場合だけ、独立した演算子カードを作る
@@ -388,14 +411,33 @@ const CardMaker = {
              } else {
                  // === 分数の場合 ===
                  // (ここに変更はないけれど、前回追加した displayMode のロジックは維持してね)
-                 const isPureNumber = !hasVars && !hasRoot;
+                 // const isPureNumber = ... (上で定義したので削除OK)
                  const mode = App.state.displayMode;
 
                  if (isPureNumber && mode === 'decimal') {
-                     // 【小数モード】
+
+                        // 【小数モード】
                      const decimalVal = absCoeff.n / absCoeff.d;
-                     let strVal = decimalVal.toString();
-                     const MAX_LEN = 10;
+                     
+                     // ★書き換え: toFixedを使って強制的に小数表記にする！
+                     // 精度を10桁に上げたので、ここも10桁まで確保してから、後ろの無駄な0を消すの。
+                     
+                     // 1. まず10桁の文字列にする（例: 2e-7 -> "0.0000002000"）
+                     let strVal = decimalVal.toFixed(10); 
+                     
+                     // 2. 末尾の "0" を消す（例: "0.0000002000" -> "0.0000002"）
+                     // 3. もし末尾が "." になったらそれも消す（例: "10." -> "10"）
+                     strVal = strVal.replace(/\.?0+$/, "");
+                     
+                     // ★追加: ここでもマージ実行！
+                     if (shouldMergeSign) {
+                         strVal = "-" + strVal;
+                     }
+
+                     // ★書き換え: MAX_LEN を少し緩める
+                     // 小さい数は文字数が多くなる（0.0000001 は9文字）ので、15文字くらいまで許容するの。
+                     const MAX_LEN = 11; 
+                     
                      if (strVal.length > MAX_LEN) {
                          let displayVal = strVal.substring(0, MAX_LEN);
                          if (displayVal.endsWith('.')) displayVal = displayVal.slice(0, -1);
@@ -405,14 +447,34 @@ const CardMaker = {
                          elems.push(new MathCard('number', strVal, 0, 0).element);
                      }
                  } else if (isPureNumber && mode === 'remainder') {
-                     // 【あまりモード】
-                     const num = (surd.coeff.on !== undefined) ? surd.coeff.on : absCoeff.n;
-                     const den = (surd.coeff.od !== undefined) ? surd.coeff.od : absCoeff.d;
-                     const quotient = Math.floor(num / den);
-                     const remainder = num % den;
-                     elems.push(new MathCard('number', quotient.toString(), 0, 0).element);
+
+                    // 【あまりモード】 (★大改造！)
+                     
+                     let quotientStr, remainderStr;
+                     
+                     // エンジンから「本当の余り」が届いている場合
+                     if (customRemainder !== undefined && customRemainder !== null) {
+                         // 商は 分子÷分母 の整数部分 (absCoeffは常に正なのでfloorでOK)
+                         const qVal = Math.floor(absCoeff.n / absCoeff.d);
+                         quotientStr = qVal.toString();
+                         
+                         // 余りは届いた値をフォーマットして使う
+                         // (小数かもしれないので、小数の整形ロジックを流用)
+                         let rVal = customRemainder.toFixed(10);
+                         rVal = rVal.replace(/\.?0+$/, "");
+                         remainderStr = rVal;
+                     } 
+                     // 届いていない場合（手入力の分数など）は従来の計算
+                     else {
+                         const num = (surd.coeff.on !== undefined) ? surd.coeff.on : absCoeff.n;
+                         const den = (surd.coeff.od !== undefined) ? surd.coeff.od : absCoeff.d;
+                         quotientStr = Math.floor(num / den).toString();
+                         remainderStr = (num % den).toString();
+                     }
+
+                     elems.push(new MathCard('number', quotientStr, 0, 0).element);
                      elems.push(new MathCard('operator', 'あまり', 0, 0).element); 
-                     elems.push(new MathCard('number', remainder.toString(), 0, 0).element);
+                     elems.push(new MathCard('number', remainderStr, 0, 0).element);
                  } else {
                      // 【分数モード】 
                      const fracCard = new MathCard('structure', '分数', 0, 0).element;
@@ -624,6 +686,7 @@ const App = {
         if (typeof MathEngine !== 'undefined') {
             MathEngine.init();
             MathEngine.config.mode = this.state.appMode;
+            MathEngine.config.displayMode = this.state.displayMode;
         } else {
             console.error("MathEngine not found. (math-engine.js is missing!)");
         }
@@ -661,6 +724,7 @@ const App = {
             });
 
             this.focusInitialSlot(container);
+            this.updateAllMinusStyles();
         }
     },
 
@@ -765,7 +829,6 @@ const App = {
 
     // setupDisplayToggleButton (既存のものを少し修正)
 
-    // ====== script.js : setupDisplayToggleButton の書き換え ======
 
     setupDisplayToggleButton() {
         const btn = document.getElementById('btn-toggle-display');
@@ -776,47 +839,32 @@ const App = {
         btn.onclick = (e) => {
             e.stopPropagation();
 
-            // ★ 1. 今選んでいるカードは「わり算」出身かな？チェック
-            let allowRemainder = false;
-            
-            if (this.state.activeSlot) {
-                const container = this.state.activeSlot.closest('.container-root');
-                // コンテナの中に「計算結果データ(_resultNodes)」があるか確認
-                if (container && container._resultNodes && container._resultNodes.length > 0) {
-                    const node = container._resultNodes[0];
-                    // さっきつけたタグ(opType)を見る！
-                    if (node.opType === 'div') {
-                        allowRemainder = true;
-                    }
-                }
-            }
+            // ★変更点：
+            // 以前はここで「activeSlotが割り算か？」とかチェックしていたけど、
+            // 全部とっぱらって、単純な3段サイクルにするの！
+            // ユーザーが「あまり」を見たいと言ったら、見せる。それが一番なの。
 
-            // ★ 2. モード切替ロジック (条件分岐)
             const current = this.state.displayMode;
             
             if (current === 'fraction') {
-                // 分数 → 小数 (ここは誰でもOK)
                 this.state.displayMode = 'decimal';
             } 
             else if (current === 'decimal') {
-                // 小数 → ？？？
-                if (allowRemainder) {
-                    // わり算なら「あまり」へ
-                    this.state.displayMode = 'remainder';
-                } else {
-                    // それ以外なら「あまり」を飛ばして「分数」へ戻る！
-                    this.state.displayMode = 'fraction';
-                }
+                this.state.displayMode = 'remainder';
             } 
             else {
-                // あまり → 分数 (一周回って戻る)
+                // remainder -> fraction
                 this.state.displayMode = 'fraction';
+            }
+
+            if (typeof MathEngine !== 'undefined') {
+                MathEngine.config.displayMode = this.state.displayMode;
             }
 
             this.updateDisplayButtonLabel();
             this.log(`Display: ${this.state.displayMode}`);
             
-            // 再描画 (選んでいるカードだけが変身する)
+            // 再描画
             this.refreshActiveResult();
             this.saveConfig();
         };
@@ -1124,7 +1172,11 @@ const App = {
 
     handleInput(type, value) {
         // バックスペース (Delete) 機能（即消滅 & モード解除版）
+
+        // ====== バックスペース (Delete) 機能の拡張 ======
         if (type === 'delete') {
+            
+            // --- パターンA: 今、数字カードを編集中 ---
             if (this.state.activeInputCard && this.state.activeInputCard.type === 'number') {
                 const currentVal = this.state.activeInputCard.value.toString();
                 
@@ -1135,19 +1187,22 @@ const App = {
                 if (nextVal === '' || nextVal === '-') {
                     this.state.activeInputCard.element.remove();
                     this.state.activeInputCard = null;
-                    this.clearFocus(); 
                     
-                    // もし負の数モード中なら、解除する！
+                    // ★変更点1: フォーカスは外さない！（clearFocusしない）
+                    // むしろ、今のアクティブスロットを再確認して、選択状態を維持するの。
+                    if (this.state.activeSlot) {
+                        this.setFocus(this.state.activeSlot);
+                        this.log("Backspace: Card Removed (Focus Kept)");
+                    } else {
+                        // スロット外（フィールド直下）なら外してもいいけど、一応クリア
+                        this.clearFocus();
+                    }
+                    
+                    // 負の数モードの解除処理
                     if (this.state.isNegativeMode) {
                         this.state.isNegativeMode = false;
-                        
-                        // ボタンの見た目も戻す
                         const signBtn = document.querySelector('button[data-type="sign"]');
                         if (signBtn) signBtn.classList.remove('active');
-                        
-                        this.log("Backspace: Card Destroyed & Negative Mode Reset");
-                    } else {
-                        this.log("Backspace: Card Destroyed");
                     }
                     this.updateAllMinusStyles();
 
@@ -1157,7 +1212,29 @@ const App = {
                     this.state.activeInputCard.updateValue(nextVal);
                     this.log("Backspace: Deleted last char");
                 }
+                return;
             }
+
+            // --- パターンB: 編集中のカードはないけれど、スロットを選択中 ---
+            // ★追加機能: 直前に作ったカード（＝スロットの末尾にあるカード）を消す機能！
+            if (this.state.activeSlot) {
+                // スロット内のカード要素だけを集める（spacerなどは無視）
+                const cards = Array.from(this.state.activeSlot.children)
+                                   .filter(c => c.classList.contains('math-card'));
+                
+                if (cards.length > 0) {
+                    // 一番後ろ（最新）のカードを取得
+                    const lastCard = cards[cards.length - 1];
+                    
+                    // 削除実行！
+                    lastCard.remove();
+                    this.log("Backspace: Deleted previous card in slot");
+                    
+                    // マイナスの色などを再計算
+                    this.updateAllMinusStyles();
+                }
+            }
+
             return;
         }
         
@@ -1399,6 +1476,56 @@ const App = {
 
         if (cards.length === 0) return;
 
+
+        // ====== ★修正：空気読みモード切り替え (Auto Mode Switcher) ======
+        // ユーザーの意思（あまりモード）を尊重しつつ、形式が変わった時だけサポートするの。
+
+        // 1. 今「あまりモード」なら、何もしない（ユーザーがそこにとどまりたいはずだから）
+        if (this.state.displayMode !== 'remainder') {
+            
+            let hasDecimal = false;
+            let hasFraction = false;
+
+            cards.forEach(card => {
+                // 分数コンテナがあるか？
+                if (card.classList.contains('container-fraction')) {
+                    hasFraction = true;
+                }
+                // 数字カードの中に「.」が含まれているか？
+                if (card.classList.contains('card-number') && card.innerText.includes('.')) {
+                    hasDecimal = true;
+                }
+            });
+
+            // 判定ロジック
+            let newMode = null;
+
+            if (hasFraction) {
+                // 分数が登場したら、さすがに分数モードの方が見やすいわ
+                newMode = 'fraction';
+            } else if (hasDecimal) {
+                // 分数がなくて、小数が登場した時
+                // ★ここがポイント：今は「分数モード」で、かつ「小数」が出てきた時だけ「小数モード」へ誘導する
+                // (もし既に小数モードならそのままでいいし)
+                if (this.state.displayMode === 'fraction') {
+                    newMode = 'decimal';
+                }
+            }
+
+            // モード変更を実行！
+            if (newMode && this.state.displayMode !== newMode) {
+                this.state.displayMode = newMode;
+                
+                // エンジンとボタンの表示も同期させる
+                if (typeof MathEngine !== 'undefined') {
+                    MathEngine.config.displayMode = newMode;
+                }
+                this.updateDisplayButtonLabel();
+                this.log(`Auto Mode Switch: ${newMode}`);
+            }
+        }
+        // ===================================================================
+
         // エンジンに読ませる
         const nodes = MathEngine.parse(cards);
         
@@ -1493,6 +1620,7 @@ const App = {
 
         // 6. 仕上げ
         this.focusInitialSlot(newRootCard.element);
+        this.updateAllMinusStyles();
         this.log("Step Generated! (Right Aligned) 🌰");
     },
 

@@ -598,6 +598,34 @@ button:hover { background-color: #f0f0f0; }
     letter-spacing: 1px;          /* 文字間を少し空けて見やすく */
 }
 
+
+/* マイナス記号のビジュアル強化 */
+/* 1. マイナスカード本体（枠）の設定 */
+.visual-minus {
+    /* 前回の transform: scaleX(...) は削除！枠が歪むからね */
+    
+    /* 代わりに幅をしっかり確保して「主張」させる */
+    min-width: 45px !important; 
+    width: auto !important;
+    
+    /* 余白調整 */
+    padding: 0 5px;
+}
+
+/* 2. 中の「-」記号だけの設定 */
+.minus-content {
+    display: inline-block;
+    
+    /* ★ここで文字だけを横にグイーンと伸ばす！ */
+    transform: scaleX(2.0); 
+    
+    /* 少し太くして存在感アップ */
+    /*font-weight: bold;*/
+    
+    /* 縦位置の微調整（必要なら） */
+    transform-origin: center;
+}
+
 /* --- 分数コンテナ（帯分数対応版） --- */
 
 /* 1. 大枠（カード全体）は「横並び」にする */

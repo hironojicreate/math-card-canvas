@@ -8,7 +8,7 @@ class Fraction {
     // ★変更: autoReduce 引数を追加 (デフォルトは true で既存動作を維持)
     constructor(numerator, denominator = 1, autoReduce = true) {
         if (!Number.isInteger(numerator) || !Number.isInteger(denominator)) {
-            const factor = 100000; 
+           const factor = 10000000000;
             numerator = Math.round(numerator * factor);
             denominator = Math.round(denominator * factor);
         }
@@ -310,7 +310,7 @@ class Poly {
 const MathEngine = {
     // コンフィグを外部から注入できるように
     // (script.js側で App.state.appMode をここにセットすることを想定)
-    config: { mode: 'arithmetic' },
+    config: { mode: 'arithmetic', displayMode: 'fraction' },
 
     init() {
         console.log("Math Engine: Ready! (Arithmetic/Math Modes Supported 🌰)");
@@ -638,7 +638,34 @@ const MathEngine = {
                             return { nodes: [errorNode], changed: true };
                         }
 
-                        res = p.div(n);
+                        // ★ここから修正！ 正しい「余り」を計算してメモする処理
+                        // 単純な数値同士の割り算なら、余りを計算しておく
+                        if (p.terms.length === 1 && n.terms.length === 1 &&
+                            p.terms[0].root === 1 && Object.keys(p.terms[0].vars).length === 0 &&
+                            n.terms[0].root === 1 && Object.keys(n.terms[0].vars).length === 0) {
+                            
+                            const valA = p.terms[0].coeff; // 割られる数 (Fraction)
+                            const valB = n.terms[0].coeff; // 割る数 (Fraction)
+                            
+                            // 商(整数) = floor(A / B)
+                            const divVal = valA.div(valB);
+                            const quotient = Math.floor(divVal.valueOf());
+                            
+                            // 余り = A - B × 商
+                            const remFrac = valA.sub(valB.mul(new Fraction(quotient)));
+                            const remVal = remFrac.valueOf(); // 小数または整数
+                            
+                            // 通常の計算結果を作成
+                            res = p.div(n);
+                            
+                            // ★結果のPolyに「本当の余り」を貼り付けておく！
+                            res.remainderVal = remVal;
+                            
+                        } else {
+                            // 複雑な式なら普通に計算
+                            res = p.div(n);
+                        }
+                        
                         res.opType = 'div'; 
                     }
                     newNodes.splice(i-1, 3, res); 
@@ -670,28 +697,70 @@ const MathEngine = {
                             
                             const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d);
 
+
                             // A. 算数モード
                             if (this.config.mode === 'arithmetic') {
-                                if (t1.coeff.d !== t2.coeff.d) {
+                                
+                                // ★追加: 小数モードなら、分母が違っても一気に計算（通分スキップ）させるフラグ
+                                const forceCalc = (this.config.displayMode === 'decimal');
+
+                                // ★書き換え: !forceCalc を条件に追加（小数モードならここは通らない）
+                                if (t1.coeff.d !== t2.coeff.d && !forceCalc) {
+                                    const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d); // lcmValの計算はここに移動してもいいけど、下のブロックでも使うから再計算が必要になるのよね
+                                    // なので、ここは元のロジック通り、通分の式を作る場所なの。
+                                    
                                     const f1 = t1.coeff.scaleTo(lcmVal);
                                     const f2 = t2.coeff.scaleTo(lcmVal);
                                     newNodes[i-1] = new Poly([new Surd(f1)]);
                                     newNodes[i+1] = new Poly([new Surd(f2)]);
                                     return { nodes: newNodes, changed: true };
                                 }
-                                else if (t1.coeff.d === t2.coeff.d && t1.coeff.d !== 1) {
-                                    const commonD = t1.coeff.d;
-                                    const n1 = t1.coeff.s * t1.coeff.n;
-                                    const n2 = t2.coeff.s * t2.coeff.n;
+                                // ★書き換え: 分母が同じ OR 強制計算(小数モード) の場合
+                                else if ((t1.coeff.d === t2.coeff.d && t1.coeff.d !== 1) || forceCalc) {
+                                    
+                                    // 共通の分母（LCM）を計算
+                                    const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d);
+                                    
+                                    // 通分した分子を計算
+                                    const n1 = t1.coeff.s * t1.coeff.n * (lcmVal / t1.coeff.d);
+                                    const n2 = t2.coeff.s * t2.coeff.n * (lcmVal / t2.coeff.d);
+                                    
                                     let newNum = (op.value === '+') ? n1 + n2 : n1 - n2;
-                                    const resFrac = new Fraction(newNum, commonD, false);
+                                    
+                                    // 結果を作成（あえて約分autoReduce=trueで作成して、綺麗な形にする）
+                                    const resFrac = new Fraction(newNum, lcmVal, true);
                                     newNodes.splice(i-1, 3, new Poly([new Surd(resFrac)]));
                                     return { nodes: newNodes, changed: true };
                                 }
                             }
                             // B. 数学モード
-                            else if (this.config.mode === 'math') {
-                                if (t1.coeff.d !== t2.coeff.d) {
+
+
+                                    else if (this.config.mode === 'math') {
+                                
+                                // ★追加: 「小数モード」なら強制的に計算を進めるフラグ
+                                // (算数モードの時と同じ考え方なの！)
+                                const forceCalc = (this.config.displayMode === 'decimal');
+
+                                const isPowerOfTen = (n) => {
+                                    if (n < 10) return false; 
+                                    let k = n;
+                                    while (k > 1 && k % 10 === 0) k /= 10;
+                                    return k === 1;
+                                };
+
+                                const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d);
+                                
+                                // 「小数っぽい分母(10の累乗)」かどうかの判定
+                                const isDecimalBased = isPowerOfTen(lcmVal);
+
+                                // ★条件変更: 
+                                // 「分母が違う」 かつ
+                                // 「小数っぽくない(10の累乗以外)」 かつ
+                                // 「小数モードでもない(!forceCalc)」 場合だけ、丁寧な通分ステップを作る
+                                if (t1.coeff.d !== t2.coeff.d && !isDecimalBased && !forceCalc) {
+                                    
+                                    // ... (通分ステップを作る処理・変更なし) ...
                                     const num1Val = t1.coeff.s * t1.coeff.n * (lcmVal / t1.coeff.d);
                                     const num2Val = t2.coeff.s * t2.coeff.n * (lcmVal / t2.coeff.d);
 
@@ -710,6 +779,19 @@ const MathEngine = {
                                         denominator: [{ type: 'number', value: lcmVal }]
                                     };
                                     newNodes.splice(i-1, 3, mergedFraction);
+                                    return { nodes: newNodes, changed: true };
+                                }
+                                
+                                // ★それ以外（一気に計算するルート）
+                                else {
+                                    // ... (計算処理・変更なし) ...
+                                    const n1 = t1.coeff.s * t1.coeff.n * (lcmVal / t1.coeff.d);
+                                    const n2 = t2.coeff.s * t2.coeff.n * (lcmVal / t2.coeff.d);
+                                    
+                                    let newNum = (op.value === '+') ? n1 + n2 : n1 - n2;
+                                    
+                                    const resFrac = new Fraction(newNum, lcmVal, true);
+                                    newNodes.splice(i-1, 3, new Poly([new Surd(resFrac)]));
                                     return { nodes: newNodes, changed: true };
                                 }
                             }
