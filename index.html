@@ -20,7 +20,19 @@
 
             <div id="calc-field" class="field-area">
                 <div class="area-label">計算フィールド (Canvas)</div>
-            </div>
+                
+                <div id="usage-guide" class="usage-guide">
+                    <h3>使い方</h3>
+                    <ol>
+                        <li>［式(始めに)］のボタンを押して、わく（式コンテナ）をつくります。</li>
+                        <li>わく（式コンテナ）の中に、数字（1・2･･･）や記号（＋・−）を入れます。</li>
+                        <li>［＝］ボタンを押して、計算をします。</li>
+                    </ol>
+                    <p class="note">※数字や記号は、自由に動かすことができます。色々試してみましょう。</p>
+                    <p class="note">※このヒントは、設定ボタン［⚙：歯車マーク］で消すことができます。</p>
+                    <p class="note">※数学モードは調整中のため、不安定です。もう少しお時間ください。</p>
+                </div>
+                </div>
 
             <div id="resize-handle" class="resize-handle"></div>
 
@@ -59,12 +71,12 @@
                 <button class="btn-create btn-var" data-type="variable">x</button>
                 <button class="btn-create btn-var" data-type="variable">y</button>
                 <button class="btn-create btn-var" data-type="variable">z</button>
-                <button class="btn-create btn-var btn-const" data-type="variable">π</button>
+                <button class="btn-create btn-var btn-const btn-math-mode" data-type="variable">π</button>
                 
                 <button class="btn-create btn-var" data-type="variable">a</button>
                 <button class="btn-create btn-var" data-type="variable">b</button>
                 <button class="btn-create btn-var" data-type="variable">c</button>
-                <button class="btn-create btn-var btn-const" data-type="variable">i</button>
+                <button class="btn-create btn-var btn-const btn-math-mode" data-type="variable">i</button>
 
                 <div class="grid-head">はこ（コンテナ）</div>
 
@@ -78,22 +90,21 @@
 
                 <button class="btn-create btn-struct" data-type="structure" data-value="( )">( )</button>
 
-                <button class="btn-create btn-struct" data-type="structure" data-value="power">
+                <div class="empty-cell btn-math-mode"></div>
+                <div class="empty-cell btn-math-mode"></div>
+
+                <button class="btn-create btn-struct btn-math-mode" data-type="operator" data-value="√">√</button>
+
+                <button class="btn-create btn-struct btn-math-mode" data-type="structure" data-value="power">
                     <div class="btn-visual-power">
                         <span class="power-base">2</span>
                         <span class="power-sup">○乗</span>
                     </div>
                 </button>
 
-                <div class="empty-cell"></div>
+                <button class="btn-create btn-struct btn-math-mode" data-type="structure" data-value="|x|">|x|</button>
 
-
-                <button class="btn-create btn-struct" data-type="operator" data-value="√">√</button>
-
-                <button class="btn-create btn-struct" data-type="structure" data-value="|x|">|x|</button>
-
-                <div class="empty-cell"></div>
-                <div class="empty-cell"></div>
+                <div class="empty-cell btn-math-mode"></div>
 
 
                 <div class="grid-head">基本キー</div>
@@ -117,7 +128,7 @@
                 <button class="btn-create" data-type="number" data-key="3">3</button>
                 <button class="btn-create" data-type="operator" data-key="-">-</button>
 
-                <button class="btn-create" data-type="sign" data-key="n">負の数</button>
+                <button class="btn-create btn-math-mode" data-type="sign" data-key="n">負の数</button>
                 <button class="btn-create" data-type="number" data-key="0">0</button>
                 <button class="btn-create" data-type="number" data-key=".">.</button>
                 <button class="btn-create" data-type="operator" data-key="+">+</button>
@@ -148,6 +159,22 @@
             </div>
 
             <div class="setting-item">
+                <span>使い方のヒントを表示</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-usage-guide" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-item">
+                <span>数学モードを使用する</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-use-math-mode">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-item">
                 <label for="toggle-focus-hints">フォーカス移動ヒントを表示</label>
                 <label class="toggle-switch">
                     <input type="checkbox" id="toggle-focus-hints" checked>
@@ -162,6 +189,7 @@
                     <span class="slider"></span>
                 </label>
             </div>
+
 
             <hr class="modal-divider">
             

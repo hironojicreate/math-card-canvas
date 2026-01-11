@@ -592,6 +592,8 @@ const App = {
         configAutoResetNegative: true, // [New] 設定: 入力確定後に負の数モードを解除するか
         configShowHints: true,  // ヒントを表示するかどうか
         configShowInfo: false,  // 情報ウィンドウを表示するかどうか
+        configUseMathMode: false,   // 数学モードを使うかどうか（デフォルトは false = OFF）
+        configShowUsage: true,   // 使い方のヒントを表示するか（デフォルトON）
         appMode: 'arithmetic',  //  アプリのモード ('arithmetic' か 'math')
         displayMode: 'fraction', // 'fraction' | 'decimal' | 'remainder'
         fractionMode: 'improper', // 分数の表示モード ('improper'=仮分数 / 'mixed'=帯分数)
@@ -688,6 +690,8 @@ const App = {
         this.setupModeButtons();
         this.setAppMode(this.state.appMode);
         this.setupDisplayToggleButton();
+        this.applyMathModeSettings();
+        this.applyUsageSettings();
         this.updateAllMinusStyles();
         if (typeof MathEngine !== 'undefined') {
             MathEngine.init();
@@ -1728,19 +1732,25 @@ const App = {
             }
         };
 
+
         // 1. 初期化（保存された状態を復元）
         headers.forEach(header => {
             const key = header.innerText.trim();
-            // 記録がない場合は「開く(true)」がデフォルト
-            let isOpen = true;
+            
+            // ★変更：「変数・定数」かどうかを判定
+            const isVariableSection = key.includes('変数');
+
+            // ★変更：デフォルト値の決定ロジック
+            // 基本は「開く(true)」だけど、変数セクションだけは「閉じる(false)」をデフォルトにする
+            let isOpen = isVariableSection ? false : true;
             
             if (this.state.accordionState && typeof this.state.accordionState[key] !== 'undefined') {
                 isOpen = this.state.accordionState[key];
             }
 
-            // もし「閉じる」記録があったら、最初から閉じておく
+            // もし「閉じる」判定なら、閉じる処理を実行
             if (!isOpen) {
-                toggleSection(header, false);
+                toggleSection(header, false); // false = 閉じる
             }
 
             // 2. クリックイベントの設定
@@ -2013,6 +2023,8 @@ if (container.classList.contains('container-fraction')) {
         const btnClose = document.getElementById('close-modal-btn');
         const toggleInfo = document.getElementById('toggle-info-window');
         const infoWindow = document.getElementById('info-window');
+        const toggleUseMath = document.getElementById('toggle-use-math-mode');
+        const toggleUsage = document.getElementById('toggle-usage-guide');
         
         // [New] 負の数モード設定スイッチ
         const toggleAutoReset = document.getElementById('toggle-auto-reset-negative');
@@ -2104,6 +2116,37 @@ if (container.classList.contains('container-fraction')) {
                 this.state.configAutoResetNegative = toggleAutoReset.checked;
                 this.saveConfig();
                 this.log(`Auto Reset Negative Mode: ${this.state.configAutoResetNegative}`);
+            };
+        }
+
+        // 数学モード使用スイッチのイベント設定
+        if (toggleUseMath) {
+            // 初期値をstateと同期
+            toggleUseMath.checked = this.state.configUseMathMode;
+            
+            toggleUseMath.onchange = () => {
+                this.state.configUseMathMode = toggleUseMath.checked;
+                
+                // 設定を即座に画面に反映！
+                this.applyMathModeSettings();
+                
+                this.saveConfig();
+            };
+        }
+
+        // ヒント用スイッチのイベント設定
+        if (toggleUsage) {
+            // 初期値を同期
+            toggleUsage.checked = this.state.configShowUsage;
+            
+            toggleUsage.onchange = () => {
+                this.state.configShowUsage = toggleUsage.checked;
+                
+                // 画面に反映
+                this.applyUsageSettings();
+                
+                // 保存
+                this.saveConfig();
             };
         }
     },
@@ -2551,7 +2594,8 @@ if (container.classList.contains('container-fraction')) {
                 if (typeof config.autoResetNegative !== 'undefined') this.state.configAutoResetNegative = config.autoResetNegative;
                 if (typeof config.showHints !== 'undefined') this.state.configShowHints = config.showHints;
                 if (typeof config.showInfo !== 'undefined') this.state.configShowInfo = config.showInfo;
-                
+                if (typeof config.useMathMode !== 'undefined') this.state.configUseMathMode = config.useMathMode;
+                if (typeof config.showUsage !== 'undefined') this.state.configShowUsage = config.showUsage;
                 if (config.appMode) this.state.appMode = config.appMode;
 
                 if (config.displayMode) this.state.displayMode = config.displayMode;
@@ -2572,9 +2616,9 @@ if (container.classList.contains('container-fraction')) {
             autoResetNegative: this.state.configAutoResetNegative,
             showHints: this.state.configShowHints,
             showInfo: this.state.configShowInfo,
-            
+            useMathMode: this.state.configUseMathMode,
             appMode: this.state.appMode,
-
+            showUsage: this.state.configShowUsage,
             displayMode: this.state.displayMode,
             fractionMode: this.state.fractionMode,
             accordionState: this.state.accordionState || {}
@@ -2824,6 +2868,40 @@ if (container.classList.contains('container-fraction')) {
         this.saveConfig();
         
         // ※ボタンの見た目は setupModeButtons の updateLabel で管理しているので、ここには書かなくてOK！
+    },
+
+    // 数学モード設定（シンプル/フル）を画面に適用する関数
+    applyMathModeSettings() {
+        const body = document.body;
+        
+        if (this.state.configUseMathMode) {
+            // ON: フル機能モード
+            body.classList.remove('simple-mode');
+            this.log("Math Mode Feature: ENABLED");
+        } else {
+            // OFF: シンプル算数モード
+            body.classList.add('simple-mode');
+            
+            // ★重要：もし現在「数学モード(AppMode: math)」で計算中なら、「算数(arithmetic)」に強制的に戻す
+            if (this.state.appMode === 'math') {
+                this.setAppMode('arithmetic');
+                // ボタンの見た目更新は setAppMode 内で行われるのでOK
+            }
+            
+            this.log("Math Mode Feature: DISABLED (Simple Mode)");
+        }
+    },
+
+    // 使い方ヒントの表示/非表示を適用する関数
+    applyUsageSettings() {
+        const body = document.body;
+        if (this.state.configShowUsage) {
+            // ON: クラスを外して表示させる
+            body.classList.remove('hide-usage');
+        } else {
+            // OFF: クラスをつけて隠す
+            body.classList.add('hide-usage');
+        }
     },
 
 

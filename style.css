@@ -228,6 +228,14 @@ button:hover { background-color: #f0f0f0; }
     line-height: 1.3;
 }
 
+/* 設定ボタン（歯車）だけ特大サイズにする */
+#btn-settings {
+    font-size: 26px !important; /* ググッと大きく！ */
+    line-height: 1;             /* 上下の余白を詰めて中心に */
+    padding-bottom: 4px;        /* 微調整：少し上に上げる */
+    font-weight: normal;        /* 太字だと潰れることがあるので普通に */
+}
+
 /* ====== style.css の末尾に追加・修正 ====== */
 
 /* 1. 分数ボタンのビジュアル（巨大化） */
@@ -1495,4 +1503,93 @@ input:checked + .slider:before {
 @keyframes slash-anim {
     from { width: 0; opacity: 0; }
     to   { width: 120%; opacity: 0.7; }
+}
+
+/* =========================================
+   Phase B: 数学モード（シンプルモード）制御（改訂版）
+   ========================================= */
+
+/* 1. シンプルモード時の非表示制御（合わせ技！） */
+
+/* 原則：変数ボタン「以外」の .btn-math-mode は、完全に消して場所も詰める */
+/* (対象：コンテナの√や乗数、基本キーの負の数など) */
+body.simple-mode .btn-math-mode:not(.btn-var) {
+    display: none !important;
+}
+
+/* 例外：変数ボタンの .btn-math-mode（つまり π と i）は、 */
+/* 姿だけ隠して、場所は透明なスペーサーとして確保する */
+body.simple-mode .btn-var.btn-math-mode {
+    visibility: hidden !important; /* 見えなくする */
+    pointer-events: none;          /* 透明なボタンをクリックできないようにする */
+    cursor: default;        /* カーソルも普通の矢印に戻す（お好みで） */
+}
+
+
+/* 2. シンプルモード時、算数/数学切替ボタンを無効化（ここはそのまま） */
+body.simple-mode #btn-toggle-app-mode {
+    opacity: 0.5;
+    pointer-events: none;
+    filter: grayscale(100%);
+    cursor: not-allowed;
+    box-shadow: none;
+    background-color: #ddd;
+    border-color: #ccc;
+}
+
+/* 3. シンプルモード時、0ボタンを横に広げて穴埋めする（ここもそのまま） */
+body.simple-mode button[data-key="0"] {
+    grid-column: span 2;
+}
+
+/* =========================================
+   使い方のヒント（Usage Guide）
+   ========================================= */
+.usage-guide {
+    position: absolute;
+    top: 50px;       /* 左上のラベルの下あたりに配置 */
+    left: 40px;      /* 少し右に寄せる */
+    z-index: 0;      /* カードより奥（背景）にする */
+    
+    color: #9baec8;  /* 薄いブルーグレー（目立たないけど読める色） */
+    
+    pointer-events: none; /* ★重要：マウス操作を突き抜けさせる！ */
+    user-select: none;    /* 文字選択もさせない */
+    
+    /* アニメーション（消える時にふわっと） */
+    transition: opacity 0.5s;
+    
+    max-width: 600px; /* 横に広がりすぎないように */
+}
+
+.usage-guide h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    border-bottom: 2px solid #dae1e7; /* 下線 */
+    display: inline-block;
+    padding-bottom: 4px;
+}
+
+.usage-guide ol {
+    margin: 0 0 15px 0;
+    padding-left: 20px;
+}
+
+.usage-guide li {
+    margin-bottom: 6px;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.usage-guide .note {
+    font-size: 12px;
+    margin: 4px 0;
+    opacity: 0.8; /* さらに薄く */
+}
+
+/* 設定でOFFにした時に隠すためのスタイル */
+/* bodyにこのクラスがつくと、ガイドが消える仕組みなの */
+body.hide-usage .usage-guide {
+    opacity: 0;
+    visibility: hidden;
 }

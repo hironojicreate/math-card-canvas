@@ -483,8 +483,9 @@ const MathEngine = {
         return parsedNodes;
     },
     
+
     // =========================================================
-    // Phase 2 Final: Step-by-Step Logic
+    // Phase 2 Final: Step-by-Step Logic (Refactored)
     // =========================================================
 
     calculate(nodes) {
@@ -512,59 +513,102 @@ const MathEngine = {
         return currentNodes[0];
     },
 
+    // --- ヘルパー: 中身が単純な数値(または変数)だけかチェック ---
+    isSimple(list) {
+        if (!list || list.length === 0) return true;
+        if (list.length > 1) return false; 
+        return list[0].type === 'number' || list[0].type === 'variable';  
+    },
 
-
+    // ★司令塔: 4つの戦略を順に呼び出す
     stepSolve(nodes) {
-        let newNodes = [...nodes];
-        let changed = false;
-        
-        // 中身が単純な数値(または変数)だけかチェックする関数
-        const isSimple = (list) => {
-            if (!list || list.length === 0) return true;
-            if (list.length > 1) return false; 
-            // 数字か、変数なら「シンプル」とみなす
-            return list[0].type === 'number' || list[0].type === 'variable';  
-        };
+        // 1. 合体担当（かけ算・わり算チェーン）
+        const mergeResult = this.strategyMerge(nodes);
+        if (mergeResult) return mergeResult;
 
-        // 作戦1: 構造物の計算 (Unboxing)
+        // 2. 開封担当（箱を開ける、仮分数にする）
+        const unboxResult = this.strategyUnbox(nodes);
+        if (unboxResult) return unboxResult;
+
+        // 3. 計算担当（足し算・引き算）
+        const calcResult = this.strategyAddSub(nodes);
+        if (calcResult) return calcResult;
+
+        // 4. 仕上げ担当（最後の約分）
+        const finalResult = this.strategyFinalReduce(nodes);
+        if (finalResult) return finalResult;
+
+        // 何もすることがなければそのまま
+        return { nodes: nodes, changed: false };
+    },
+
+    // ====== 戦略 1: 合体 (Merge) ======
+    strategyMerge(nodes) {
+        const newNodes = [...nodes];
+        
+        for (let i = 1; i < newNodes.length - 1; i++) {
+            const op = newNodes[i];
+            if (op.type === 'operator' && ['*', '×', '/', '÷'].includes(op.value)) {
+                
+                // A. 分数チェーン合体
+                const chainResult = this.solveFractionChain(newNodes, i);
+                if (chainResult) {
+                    return { nodes: chainResult.nodes, changed: true };
+                }
+
+                // B. 通常計算 (チェーン処理がパスした場合)
+                const prev = newNodes[i-1];
+                const next = newNodes[i+1];
+                const p = this.ensurePoly(prev);
+                const n = this.ensurePoly(next);
+
+                if (p && n) {
+                    let res;
+                    if (op.value === '*' || op.value === '×') {
+                        res = p.mul(n);
+                    } else {
+                        res = p.div(n);
+                    }
+                    newNodes.splice(i-1, 3, res);
+                    return { nodes: newNodes, changed: true };
+                }
+            }
+        }
+        return null; // 変更なし
+    },
+
+    // ====== 戦略 2: 開封 (Unbox) ======
+    strategyUnbox(nodes) {
+        const newNodes = [...nodes];
+        let changed = false;
+
         for (let i = 0; i < newNodes.length; i++) {
             const node = newNodes[i];
 
-            // 帯分数を仮分数に展開するステップ
+            // 1. 帯分数を仮分数に展開
             if (node.type === 'structure' && node.subType === 'fraction') {
-                // 整数部分(integer)があり、かつ中身が確定している場合
-                if (node.integer && node.integer.length > 0 && isSimple(node.integer) &&
-                    isSimple(node.numerator) && isSimple(node.denominator)) {
+                if (node.integer && node.integer.length > 0 && this.isSimple(node.integer) &&
+                    this.isSimple(node.numerator) && this.isSimple(node.denominator)) {
                     
                     const intVal = node.integer[0].value;
                     const numVal = node.numerator[0].value;
                     const denVal = node.denominator[0].value;
 
-                    // 整数部分が 0 以外なら、仮分数に変換する！
                     if (intVal !== 0) {
                         const newNum = intVal * denVal + numVal;
-                        
-                        // 構造を書き換える（整数部分を空にして、分子を更新）
                         newNodes[i] = {
-                            type: 'structure',
-                            subType: 'fraction',
-                            integer: [], // 空にする
+                            type: 'structure', subType: 'fraction', integer: [], 
                             numerator: [{ type: 'number', value: newNum }],
                             denominator: [{ type: 'number', value: denVal }]
                         };
-                        return { nodes: newNodes, changed: true };
+                        return { nodes: newNodes, changed: true }; // 即リターン
                     }
                 }
             }
 
-            // 計算してしまう前に、「ビジュアル約分」のチャンスがないかチェック！
-            // これをしないと、せっかく並べた「3 × 5」がすぐに「15」になっちゃうの。
-
+            // 2. ビジュアル約分チェック
             if (node.type === 'structure' && node.subType === 'fraction') {
-                
-                // 隣に「＋」や「－」があるか確認する
                 let isPartOfAddSub = false;
-                
                 if (i > 0) {
                     const prev = newNodes[i-1];
                     if (prev.type === 'operator' && ['+', '-'].includes(prev.value)) isPartOfAddSub = true;
@@ -574,23 +618,35 @@ const MathEngine = {
                     if (next.type === 'operator' && ['+', '-'].includes(next.value)) isPartOfAddSub = true;
                 }
 
-                // 「足し算・引き算の途中じゃない」ときだけ、ビジュアル約分を試みる！
                 if (!isPartOfAddSub) {
                     const reductionResult = this.findReductionPairs(node);
                     if (reductionResult) {
                         newNodes[i] = reductionResult;
-                        return { nodes: newNodes, changed: true };
+                        return { nodes: newNodes, changed: true }; // 即リターン
                     }
                 }
             }
 
+            // 3. 構造物の計算 (Unboxing)
             if (node.type === 'structure') {
+                // チェーン中なら箱を開けない
+                let isInChain = false;
+                if (i > 0) {
+                    const prev = newNodes[i-1];
+                    if (prev.type === 'operator' && ['*', '×', '/', '÷'].includes(prev.value)) isInChain = true;
+                }
+                if (i < newNodes.length - 1) {
+                    const next = newNodes[i+1];
+                    if (next.type === 'operator' && ['*', '×', '/', '÷'].includes(next.value)) isInChain = true;
+                }
+
+                if (isInChain && node.subType === 'fraction') {
+                    continue; 
+                }
+
                 let evaluated = this.evaluateStructureSimple(node);
                 if (evaluated) {
-                    
-                    if (evaluated.type === 'error') {
-                        return { nodes: [evaluated], changed: true };
-                    }
+                    if (evaluated.type === 'error') return { nodes: [evaluated], changed: true };
 
                     let isMeaningful = true;
                     
@@ -598,126 +654,52 @@ const MathEngine = {
                     if (node.subType === 'sqrt') {
                         if (evaluated.terms.length === 1) {
                             const t = evaluated.terms[0];
-                            if (t.root !== 1 && Math.abs(t.coeff.valueOf()) === 1) {
-                                isMeaningful = false; 
-                            }
+                            if (t.root !== 1 && Math.abs(t.coeff.valueOf()) === 1) isMeaningful = false; 
                         }
                     }
                     
                     // 分数コンテナのチェック
                     if (node.subType === 'fraction') {
-                        const isNumSimple = isSimple(node.numerator);
-                        const isDenSimple = isSimple(node.denominator);
-                        
-                        // ★修正: 分母が「1」かどうかチェック
+                        const isNumSimple = this.isSimple(node.numerator);
+                        const isDenSimple = this.isSimple(node.denominator);
                         const isDenOne = (
-                            node.denominator && 
-                            node.denominator.length === 1 && 
-                            node.denominator[0].type === 'number' && 
-                            node.denominator[0].value === 1
+                            node.denominator && node.denominator.length === 1 && 
+                            node.denominator[0].type === 'number' && node.denominator[0].value === 1
                         );
-
-                        // 「中身が単純」かつ「分母が1じゃない」ときだけ、計算を保留（スルー）する。
-                        // つまり、分母が1なら保留せずに「計算実行（整数化）」に進む！
-                        if (isNumSimple && isDenSimple && !isDenOne) {
-                            isMeaningful = false; 
-                        } else {
-                            isMeaningful = true;
-                        }
+                        if (isNumSimple && isDenSimple && !isDenOne) isMeaningful = false; 
                     }
 
-                    // ★追加: べき乗(Power)コンテナのチェック
-                    // 「aの2乗」のように中身がシンプルな時は、箱を開けただけで止まらず、計算を続行させる！
+                    // べき乗のチェック
                     if (node.subType === 'power') {
-                        if (isSimple(node.base) && isSimple(node.exponent)) {
-                            isMeaningful = false;
-                        } else {
-                            isMeaningful = true;
-                        }
+                        if (this.isSimple(node.base) && this.isSimple(node.exponent)) isMeaningful = false;
                     }
 
-                    // ★追加: 記号コンテナ (|x| や ( ) ) の処理
+                    // 記号コンテナのチェック
                     if (node.subType === 'symbol') {
-                        
-                        // パターンA: 絶対値 |...|
                         if (node.symbolType === 'abs') {
-                            // 中身が「純粋な数字」になったかチェック
-                            // (変数 x とかが残っていると、プラスかマイナスかわからないから外せないの)
-                            if (evaluated.terms.length === 1 && 
-                                Object.keys(evaluated.terms[0].vars).length === 0 &&
-                                evaluated.terms[0].root === 1) {
-                                
-                                // 係数をチェック
+                            if (evaluated.terms.length === 1 && evaluated.terms[0].root === 1 && Object.keys(evaluated.terms[0].vars).length === 0) {
                                 const val = evaluated.terms[0].coeff.valueOf();
-                                
-                                if (val < 0) {
-                                    // マイナスなら、-1 をかけてプラスにする魔法！
-                                    const positivePoly = evaluated.mul(new Poly([new Surd(new Fraction(-1))]));
-                                    evaluated = positivePoly;
-                                }
-                                // プラスなら何もしない（そのまま出してOK）
-                                
-                                isMeaningful = true; // 箱が外れるので「変化あり」
+                                if (val < 0) evaluated = evaluated.mul(new Poly([new Surd(new Fraction(-1))]));
                             } else {
-                                // まだ中身が計算できない（変数など）なら、箱は外さない
                                 isMeaningful = false; 
                             }
-                        }
-                        
-                        // パターンB: ただのカッコ ( )
-
-                        else if (node.symbolType === 'parens') {
-                            
-                            let shouldUnbox = true; // 基本は外す
-
-                            // ★ここが新ルール！
-                            // 中身が「ただの負の数」になった場合...
-                            if (evaluated.terms.length === 1 && 
-                                evaluated.terms[0].root === 1 && 
-                                Object.keys(evaluated.terms[0].vars).length === 0) {
-                                
+                        } else if (node.symbolType === 'parens') {
+                            let shouldUnbox = true; 
+                            if (evaluated.terms.length === 1 && evaluated.terms[0].root === 1 && Object.keys(evaluated.terms[0].vars).length === 0) {
                                 const val = evaluated.terms[0].coeff.valueOf();
                                 if (val < 0) {
-                                    // 前のノードをチラ見する
                                     const prev = (i > 0) ? newNodes[i-1] : null;
-                                    
-                                    // 前に演算子がいるなら、カッコは外さない！（衝突事故防止）
-                                    if (prev && prev.type === 'operator') {
-                                        shouldUnbox = false;
-                                    }
+                                    if (prev && prev.type === 'operator') shouldUnbox = false;
                                 }
                             }
-
-                            if (shouldUnbox) {
-                                // カッコを外して中身(evaluated)にする
-                                isMeaningful = true;
-                                // (この後の newNodes[i] = evaluated; で中身になる)
-
-                                } else {
-                                // カッコを維持する場合
-                                
-                                // ★★★ 修正ポイント！ ★★★
-                                // 元の中身(node.content)が、すでに単純な数値なら「変化なし」とみなしてスルーする！
-                                // そうしないと、ここで満足して止まってしまい、下の足し算に進めないから。
-                                const isContentSimple = (node.content.length === 1 && 
-                                    (node.content[0].type === 'number' || node.content[0].type === 'variable'));
-
+                            if (!shouldUnbox) {
+                                const isContentSimple = (node.content.length === 1 && (node.content[0].type === 'number' || node.content[0].type === 'variable'));
                                 if (!isContentSimple) {
-                                    // 中身が「2-7」みたいに計算が必要だったなら、
-                                    // 「(-5)」になったことは立派な変化なので記録する
-                                    newNodes[i] = {
-                                        type: 'structure',
-                                        subType: 'symbol',
-                                        symbolType: 'parens',
-                                        content: [ evaluated ] 
-                                    };
-                                    isMeaningful = true; 
-                                } else {
-                                    // すでに「(-5)」の状態なら、ここはスルーして足し算に進ませる！
-                                    isMeaningful = false;
+                                    newNodes[i] = { type: 'structure', subType: 'symbol', symbolType: 'parens', content: [ evaluated ] };
+                                    return { nodes: newNodes, changed: true }; 
                                 }
-                                
-                                evaluated = null; // 上書き防止
+                                isMeaningful = false;
+                                evaluated = null; 
                             }
                         }
                     }
@@ -729,49 +711,15 @@ const MathEngine = {
                 }
             }
         }
-
-        // もし構造の変化（カッコの展開など）だけで「意味がある」と判定されたら、ここでストップして表示
+        
         if (changed) return { nodes: newNodes, changed: true };
+        return null;
+    },
 
+    // ====== 戦略 3: 計算 (Add/Sub) ======
+    strategyAddSub(nodes) {
+        const newNodes = [...nodes];
 
-        // 作戦2: 掛け算・割り算 (*, /) - 分数チェーン対応版
-        for (let i = 1; i < newNodes.length - 1; i++) {
-            const op = newNodes[i];
-            if (op.type === 'operator' && ['*', '×', '/', '÷'].includes(op.value)) {
-                
-                // 1. まず「分数チェーン」として一括処理を試みる
-                const chainResult = this.solveFractionChain(newNodes, i);
-                if (chainResult) {
-                    return { nodes: chainResult.nodes, changed: true };
-                }
-
-                // 2. ★復活: 分数チェーンじゃなかった場合（ただの 2 × 3 など）の通常計算
-                // これがないと、分子の中の計算が進まなくなっちゃうの！
-                const prev = newNodes[i-1];
-                const next = newNodes[i+1];
-                const p = this.ensurePoly(prev);
-                const n = this.ensurePoly(next);
-
-                if (p && n) {
-                    let res;
-                    // 掛け算
-                    if (op.value === '*' || op.value === '×') {
-                        res = p.mul(n);
-                    } 
-                    // 割り算
-                    else {
-                        res = p.div(n);
-                    }
-                    
-                    newNodes.splice(i-1, 3, res);
-                    return { nodes: newNodes, changed: true };
-                }
-            }
-        }
-
-        if (changed) return { nodes: newNodes, changed: true };
-
-        // 作戦3: 足し算・引き算 (+, -)
         for (let i = 1; i < newNodes.length - 1; i++) {
             const op = newNodes[i];
             if ((op.value === '+' || op.value === '-') && op.type === 'operator') {
@@ -781,7 +729,7 @@ const MathEngine = {
                 const n = this.ensurePoly(next);
                 
                 if (p && n) {
-                    // 分数同士の足し算（通分ロジック）
+                    // 分数通分ロジック
                     if (p.terms.length === 1 && n.terms.length === 1) {
                         const t1 = p.terms[0];
                         const t2 = n.terms[0];
@@ -791,77 +739,45 @@ const MathEngine = {
                             
                             const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d);
 
-
                             // A. 算数モード
                             if (this.config.mode === 'arithmetic') {
-                                
-                                // ★追加: 小数モードなら、分母が違っても一気に計算（通分スキップ）させるフラグ
                                 const forceCalc = (this.config.displayMode === 'decimal');
 
-                                // ★書き換え: !forceCalc を条件に追加（小数モードならここは通らない）
                                 if (t1.coeff.d !== t2.coeff.d && !forceCalc) {
-                                    const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d); // lcmValの計算はここに移動してもいいけど、下のブロックでも使うから再計算が必要になるのよね
-                                    // なので、ここは元のロジック通り、通分の式を作る場所なの。
-                                    
                                     const f1 = t1.coeff.scaleTo(lcmVal);
                                     const f2 = t2.coeff.scaleTo(lcmVal);
                                     newNodes[i-1] = new Poly([new Surd(f1)]);
                                     newNodes[i+1] = new Poly([new Surd(f2)]);
                                     return { nodes: newNodes, changed: true };
                                 }
-                                // ★書き換え: 分母が同じ OR 強制計算(小数モード) の場合
                                 else if ((t1.coeff.d === t2.coeff.d && t1.coeff.d !== 1) || forceCalc) {
-                                    
-                                    // 共通の分母（LCM）を計算
-                                    const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d);
-                                    
-                                    // 通分した分子を計算
                                     const n1 = t1.coeff.s * t1.coeff.n * (lcmVal / t1.coeff.d);
                                     const n2 = t2.coeff.s * t2.coeff.n * (lcmVal / t2.coeff.d);
-                                    
                                     let newNum = (op.value === '+') ? n1 + n2 : n1 - n2;
 
-                                    // 0になったら即リターン！
                                     if (newNum === 0) {
                                         const zeroFrac = new Fraction(0, 1);
                                         newNodes.splice(i-1, 3, new Poly([new Surd(zeroFrac)]));
                                         return { nodes: newNodes, changed: true };
                                     }
                                     
-                                    // 結果を作成（あえて約分autoReduce=trueで作成して、綺麗な形にする）
                                     const resFrac = new Fraction(newNum, lcmVal, false);
                                     newNodes.splice(i-1, 3, new Poly([new Surd(resFrac)]));
                                     return { nodes: newNodes, changed: true };
                                 }
                             }
                             // B. 数学モード
-
-
-                                    else if (this.config.mode === 'math') {
-                                
-                                // ★追加: 「小数モード」なら強制的に計算を進めるフラグ
-                                // (算数モードの時と同じ考え方なの！)
+                            else if (this.config.mode === 'math') {
                                 const forceCalc = (this.config.displayMode === 'decimal');
-
                                 const isPowerOfTen = (n) => {
                                     if (n < 10) return false; 
                                     let k = n;
                                     while (k > 1 && k % 10 === 0) k /= 10;
                                     return k === 1;
                                 };
-
-                                const lcmVal = this.lcm(t1.coeff.d, t2.coeff.d);
-                                
-                                // 「小数っぽい分母(10の累乗)」かどうかの判定
                                 const isDecimalBased = isPowerOfTen(lcmVal);
 
-                                // ★条件変更: 
-                                // 「分母が違う」 かつ
-                                // 「小数っぽくない(10の累乗以外)」 かつ
-                                // 「小数モードでもない(!forceCalc)」 場合だけ、丁寧な通分ステップを作る
                                 if (t1.coeff.d !== t2.coeff.d && !isDecimalBased && !forceCalc) {
-                                    
-                                    // ... (通分ステップを作る処理・変更なし) ...
                                     const num1Val = t1.coeff.s * t1.coeff.n * (lcmVal / t1.coeff.d);
                                     const num2Val = t2.coeff.s * t2.coeff.n * (lcmVal / t2.coeff.d);
 
@@ -874,21 +790,16 @@ const MathEngine = {
                                     else if (op.value === '-' && num2Val < 0) numeratorNodes[1].value = '+';
 
                                     const mergedFraction = {
-                                        type: 'structure',
-                                        subType: 'fraction',
+                                        type: 'structure', subType: 'fraction',
                                         numerator: numeratorNodes,
                                         denominator: [{ type: 'number', value: lcmVal }]
                                     };
                                     newNodes.splice(i-1, 3, mergedFraction);
                                     return { nodes: newNodes, changed: true };
                                 }
-                                
-                                // ★それ以外（一気に計算するルート）
                                 else {
-                                    // ... (計算処理・変更なし) ...
                                     const n1 = t1.coeff.s * t1.coeff.n * (lcmVal / t1.coeff.d);
                                     const n2 = t2.coeff.s * t2.coeff.n * (lcmVal / t2.coeff.d);
-                                    
                                     let newNum = (op.value === '+') ? n1 + n2 : n1 - n2;
                                     
                                     if (newNum === 0) {
@@ -908,20 +819,21 @@ const MathEngine = {
                     let res;
                     if (op.value === '+') {
                         res = p.add(n);
-                        res.opType = 'add'; 
                     } else {
                         res = p.sub(n);
-                        res.opType = 'sub'; 
                     }
                     newNodes.splice(i-1, 3, res);
                     return { nodes: newNodes, changed: true };
                 }
             }
         }
-        
-        if (changed) return { nodes: newNodes, changed: true };
+        return null;
+    },
 
-        // 作戦4: 最後の仕上げ（約分）
+    // ====== 戦略 4: 仕上げ (Final Reduce) ======
+    strategyFinalReduce(nodes) {
+        const newNodes = [...nodes];
+        
         if (newNodes.length === 1 && newNodes[0] instanceof Poly) {
              const poly = newNodes[0];
              if (poly.terms.length === 1) {
@@ -937,8 +849,7 @@ const MathEngine = {
                  }
              }
         }
-
-        return { nodes: newNodes, changed: false };
+        return null;
     },
 
 
@@ -1127,31 +1038,29 @@ const MathEngine = {
         // チェーンの中に「帯分数」や「整数」が混じっていたら、まずは「仮分数」に統一する
         for (let k = 0; k < chainNodes.length; k += 2) {
             const item = chainNodes[k];
-            
-            // 整数なら分数(n/1)へ
-            if (item.type === 'number') {
-                const newNodes = [...nodes];
-                newNodes[start + k] = {
-                    type: 'structure', subType: 'fraction',
-                    numerator: [{ type: 'number', value: item.value }],
-                    denominator: [{ type: 'number', value: 1 }],
-                    integer: []
-                };
-                return { nodes: newNodes };
-            }
 
-            // 帯分数なら仮分数へ
+           // 帯分数なら仮分数へ（これは教育的に見せたいので残す）
             if (item.type === 'structure' && item.subType === 'fraction') {
-                // 整数部分(integer)を持っているかチェック
                 if (item.integer && item.integer.length > 0 && item.integer[0].value !== 0) {
-                     // ここは既存のstepSolve冒頭のロジックが先に動くはずだけど、
-                     // 万が一のためにここでも検知したら変換を促す（あるいはここでやっちゃう）
-                     // 今回はstepSolve冒頭に任せるとして、ここはスルーでもいいけど、
-                     // 念のため「構造が整っていない」とみなしてリターンなし（stepSolve冒頭に任せる）
-                     return null; 
+                     // 帯分数処理はそのまま...
+                     // (簡易的に計算して仮分数ノードを作り、returnするロジック)
+                     // ここは既存のままでOKだけど、念のため書いておくわね↓
+                     const intVal = item.integer[0].value;
+                     // ※numerator/denominatorの中身が単純数値と仮定
+                     // (厳密には再帰計算が必要だけど、StepSolveの作戦2が最優先にある以上、
+                     //  ここは簡易的な構造置換でステップを進めるのが安全)
+                     // ...とりあえずここは「帯分数があったらreturn」して、
+                     // StepSolveの「作戦1」に任せる手もあるけど、
+                     // 「作戦2(ここ)」が優先された今、ここで処理しないと無限ループになる恐れがあるわ。
+                     
+                     // 既存のコードにあるロジックを生かすか、
+                     // いっそ帯分数も「内部的に処理」して一気に合体させるか？
+                     // 今回は「整数問題」の解決に集中するため、帯分数は「見せる」方針でコードは触らずにおくわ！
+                     return null; // 帯分数処理はStepSolveの作戦1（Unboxing）に任せるためにスルーする
                 }
             }
         }
+
         
         // --- Step B: 大合体（Merge） ---
         // まだ「巨大分数コンテナ」になっていないなら、合体させる！
@@ -1226,59 +1135,73 @@ const MathEngine = {
         return null;
     },
 
-    // 複数の項を一つの巨大な分数にまとめる工場
+
+    // 複数の項を一つの巨大な分数にまとめる工場（強化版）
     createMergedFraction(chainNodes) {
         let numList = [];
         let denList = [];
         
-        // 最初の項
-        let currentItem = chainNodes[0];
-        
-        // 最初の項の処理
-        if (currentItem.subType === 'fraction') {
-             // そのまま採用（スプレッド構文でコピー）
-             numList.push(...currentItem.numerator);
-             denList.push(...currentItem.denominator);
-        } else if (currentItem.type === 'number') {
-             numList.push(currentItem);
-             denList.push({ type: 'number', value: 1 });
-        } else {
-             // Polyなどの場合は簡易対応
-             numList.push({ type: 'number', value: 1 }); // 仮
-             denList.push({ type: 'number', value: 1 });
-        }
+        // ヘルパー: どんなノードも「分子リスト」「分母リスト」に分解する
+        const extractParts = (item) => {
+            // A. 分数コンテナ
+            if (item.type === 'structure' && item.subType === 'fraction') {
+                return { 
+                    n: [...item.numerator], 
+                    d: [...item.denominator] 
+                };
+            }
+            // B. ただの数字
+            if (item.type === 'number') {
+                return { 
+                    n: [{ type: 'number', value: item.value }], 
+                    d: [{ type: 'number', value: 1 }] 
+                };
+            }
+            // C. Poly（計算済みの値）
+            if (item instanceof Poly) {
+                // シンプルな整数とみなして値を取り出す
+                if (item.terms.length === 1 && item.terms[0].root === 1) {
+                     const val = item.terms[0].coeff.valueOf();
+                     return {
+                        n: [{ type: 'number', value: val }],
+                        d: [{ type: 'number', value: 1 }]
+                     };
+                }
+            }
+            // D. その他（変数など）→ とりあえず分子に置いて分母1とする
+            // (本来はここに来る前にPoly化されるはずだけど念のため)
+            return { 
+                n: [item], // そのまま分子へ
+                d: [{ type: 'number', value: 1 }] 
+            };
+        };
 
-        // 続く演算子と項を処理
+        // 最初の項を処理
+        const firstParts = extractParts(chainNodes[0]);
+        numList.push(...firstParts.n);
+        denList.push(...firstParts.d);
+
+        // 2番目以降の項を処理（演算子を見て配置を決める）
         for (let k = 1; k < chainNodes.length; k += 2) {
             const op = chainNodes[k].value;
             const item = chainNodes[k+1];
             
-            let itemNum = [];
-            let itemDen = [];
-            
-            if (item.subType === 'fraction') {
-                itemNum = [...item.numerator];
-                itemDen = [...item.denominator];
-            } else if (item.type === 'number') {
-                itemNum = [{ type: 'number', value: item.value }];
-                itemDen = [{ type: 'number', value: 1 }];
-            }
+            const parts = extractParts(item);
 
-            // 掛け算なら「分子×分子」「分母×分母」
             if (op === '*' || op === '×') {
+                // 掛け算：素直に配置
                 numList.push({ type: 'operator', value: '×' });
-                numList.push(...itemNum);
+                numList.push(...parts.n);
                 
                 denList.push({ type: 'operator', value: '×' });
-                denList.push(...itemDen);
-            }
-            // 割り算なら「分子×分母」「分母×分子」（逆数！）
-            else if (op === '/' || op === '÷') {
+                denList.push(...parts.d);
+            } else if (op === '/' || op === '÷') {
+                // 割り算：逆転配置（逆数！）
                 numList.push({ type: 'operator', value: '×' });
-                numList.push(...itemDen); // 逆転！
+                numList.push(...parts.d); // 分子に分母が来る
                 
                 denList.push({ type: 'operator', value: '×' });
-                denList.push(...itemNum); // 逆転！
+                denList.push(...parts.n); // 分母に分子が来る
             }
         }
         
