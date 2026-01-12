@@ -1534,5 +1534,12 @@ const MathEngine = {
         if(c.classList.contains('container-root'))return'root'; if(c.classList.contains('container-fraction'))return'fraction'; if(c.classList.contains('container-sqrt'))return'sqrt';
         if(c.classList.contains('container-power'))return'power'; if(c.classList.contains('container-symbol'))return'symbol'; return'unknown';
     },
-    extractValue(c) { return c.innerText; }
+
+    extractValue(c) { 
+        let text = c.innerText;
+        // ★iPad対策: 全角マイナス、エンダッシュ、エムダッシュなどを全て「半角マイナス」に強制変換！
+        // これでガードマンが正しく認識できるようになるはずなの
+        text = text.replace(/[−–—]/g, '-');
+        return text; 
+    }
 };
