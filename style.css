@@ -2,12 +2,24 @@
 * { box-sizing: border-box; }
 
 body {
-    margin: 0; padding: 0;
+    margin: 0; 
+    padding: 0;
     font-family: "Helvetica Neue", Arial, sans-serif;
     background-color: #f0f4f8;
     color: #333;
-    height: 100vh;
+
+    /* ★変更点1：高さの設定をスマホ・タブレット向けに強化 */
+    height: 100vh;        /* 古いブラウザ用 */
+    height: 100dvh;       /* 新しいブラウザ用（アドレスバーの伸縮に対応！） */
+    
     overflow: hidden;
+
+    /* ★変更点2：iPad/iPhoneの「セーフエリア」対応 */
+    /* ステータスバー（時計など）の分だけ、上に余白（パディング）を自動で入れるの */
+    padding-top: env(safe-area-inset-top, 20px);    /* 上の余白（未対応なら20px） */
+    padding-bottom: env(safe-area-inset-bottom, 0); /* 下の余白（ホームバー対策） */
+    padding-left: env(safe-area-inset-left, 0);     /* 横向き対策 */
+    padding-right: env(safe-area-inset-right, 0);   /* 横向き対策 */
 }
 
 .app-container { display: flex; height: 100%; width: 100%; }
