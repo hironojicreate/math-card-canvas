@@ -979,9 +979,13 @@ const App = {
                 const field = document.getElementById(FIELD_ID);
 
                 // A. 計算フィールドをクリア
-                field.innerHTML = '<div class="area-label">計算フィールド (Canvas)</div>';
+                Array.from(field.children).forEach(child => {
+                    if (!child.classList.contains('area-label') && child.id !== 'usage-guide') {
+                        child.remove();
+                    }
+                });
                 
-                // ★追加：スクロール位置を左上（原点）に戻す！
+                // スクロール位置を左上（原点）に戻す！
                 field.scrollLeft = 0;
                 field.scrollTop = 0;
 

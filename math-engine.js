@@ -522,6 +522,11 @@ const MathEngine = {
 
     // ★司令塔: 4つの戦略を順に呼び出す
     stepSolve(nodes) {
+        // 0. カッコ計算担当（最優先！）← ★NEW!
+        // カッコの中身があれば、まずはそれを計算して「数字1つ」にします
+        const parensResult = this.strategyParentheses(nodes);
+        if (parensResult) return parensResult;
+
         // 1. 合体担当（かけ算・わり算チェーン）
         const mergeResult = this.strategyMerge(nodes);
         if (mergeResult) return mergeResult;
@@ -540,6 +545,64 @@ const MathEngine = {
 
         // 何もすることがなければそのまま
         return { nodes: nodes, changed: false };
+    },
+
+    // ====== 戦略 0: カッコ計算 (Parentheses) ======
+    strategyParentheses(nodes) {
+        const newNodes = [...nodes];
+        
+        for (let i = 0; i < newNodes.length; i++) {
+            const node = newNodes[i];
+            
+            // カッコ構造体 (parens) を探す
+            if (node.type === 'structure' && node.subType === 'symbol' && node.symbolType === 'parens') {
+                
+                // 安全策: 中身がない、またはエラーの場合は無視
+                if (!node.content || node.content.length === 0) continue;
+
+                // 中身が既に「ただの数字1個」なら、この戦略では触らない（ループ防止）
+                // ただし、もし負の数でカッコに入っているなら、それは「計算結果」としての姿なのでOK
+                if (node.content.length === 1 && node.content[0].type === 'number') continue;
+                
+                // 中身を計算する (再帰的に計算エンジンを呼ぶ！)
+                // 例: "(3 + 8)" の中身を渡すと、"11" (Poly) になって帰ってくる
+                const result = this.calculate(node.content);
+                
+                // 結果から数値を取り出す
+                let val = null;
+                
+                if (result instanceof Poly) {
+                    // Polyなら係数を取得 (単項式・定数項と仮定)
+                    if (result.terms.length === 1 && result.terms[0].root === 1) {
+                         val = result.terms[0].coeff.valueOf();
+                    }
+                } else if (result && result.type === 'number') {
+                    // ただの数字ノードならそのまま
+                    val = result.value;
+                }
+                
+                // 値が取れたら、正負判定をして置き換える
+                if (val !== null) {
+                    if (val >= 0) {
+                        // 【パターンA: 正の数】 → カッコを外す (Unwrap)
+                        // 例: (11) => 11
+                        newNodes[i] = { type: 'number', value: val };
+                        return { nodes: newNodes, changed: true };
+                    } else {
+                        // 【パターンB: 負の数】 → カッコで包んだままにする (Wrap)
+                        // 例: (-2) => (-2) ※中身を「計算済みの値」に更新
+                        newNodes[i] = { 
+                            type: 'structure', 
+                            subType: 'symbol', 
+                            symbolType: 'parens', 
+                            content: [{ type: 'number', value: val }] 
+                        };
+                        return { nodes: newNodes, changed: true };
+                    }
+                }
+            }
+        }
+        return null;
     },
 
     // ====== 戦略 1: 合体 (Merge) ======
@@ -584,6 +647,48 @@ const MathEngine = {
 
         for (let i = 0; i < newNodes.length; i++) {
             const node = newNodes[i];
+
+            // 分母のマイナスを解決する「サイン・ムーバー」！
+            // 3 / (-3) を見つけたら、 -3 / 3 (構造体) に変換してステップを進めるの
+            if (node.type === 'structure' && node.subType === 'fraction') {
+                const den = node.denominator;
+                
+                // 分母が「カッコ」1個だけかチェック
+                if (den && den.length === 1 && den[0].symbolType === 'parens') {
+                     const content = den[0].content;
+                     
+                     // カッコの中身が「数字1個」かチェック
+                     if (content && content.length === 1 && content[0].type === 'number') {
+                         const denVal = content[0].value;
+
+                         // もし分母が「負の数」なら移動作戦開始！
+                         if (denVal < 0) {
+                             // 分子の値を計算して取得（Poly経由で安全に）
+                             const numPoly = this.calcSub(node.numerator);
+                             
+                             // 分子も単純な数値（ルートなどがない）なら実行
+                             if (numPoly && numPoly.terms.length === 1 && numPoly.terms[0].root === 1) {
+                                 const numVal = numPoly.terms[0].coeff.valueOf();
+                                 
+                                 // ★ここがミソ！
+                                 // 分子にマイナスを移す（符号反転）
+                                 const newNumVal = -1 * numVal;
+                                 // 分母はプラスにする（絶対値）
+                                 const newDenVal = Math.abs(denVal);
+
+                                 // 新しい分数構造を作って置き換える！
+                                 // これで次は -3/3 と表示されるはずなの
+                                 newNodes[i] = {
+                                     type: 'structure', subType: 'fraction', integer: [], 
+                                     numerator: [{ type: 'number', value: newNumVal }],
+                                     denominator: [{ type: 'number', value: newDenVal }]
+                                 };
+                                 return { nodes: newNodes, changed: true };
+                             }
+                         }
+                     }
+                }
+            }
 
             // 1. 帯分数を仮分数に展開
             if (node.type === 'structure' && node.subType === 'fraction') {
@@ -685,13 +790,18 @@ const MathEngine = {
                             }
                         } else if (node.symbolType === 'parens') {
                             let shouldUnbox = true; 
+
+                                // 中身が数字1個の場合の判定
                             if (evaluated.terms.length === 1 && evaluated.terms[0].root === 1 && Object.keys(evaluated.terms[0].vars).length === 0) {
                                 const val = evaluated.terms[0].coeff.valueOf();
+                                
+                                // ★変更: 負の数なら「無条件で」カッコを維持する！
+                                // (以前は prev.type === 'operator' の時だけ維持してたけど、それだと分母の時に消えちゃうから)
                                 if (val < 0) {
-                                    const prev = (i > 0) ? newNodes[i-1] : null;
-                                    if (prev && prev.type === 'operator') shouldUnbox = false;
+                                    shouldUnbox = false; 
                                 }
                             }
+
                             if (!shouldUnbox) {
                                 const isContentSimple = (node.content.length === 1 && (node.content[0].type === 'number' || node.content[0].type === 'variable'));
                                 if (!isContentSimple) {
@@ -903,19 +1013,78 @@ const MathEngine = {
         }
 
         if (node.type === 'structure') {
+
             if (node.subType === 'fraction') {
                 // 中身を計算
                 let intPart = this.calcSub(node.integer) || new Poly([new Surd(new Fraction(0))]);
                 let numPart = this.calcSub(node.numerator) || new Poly([new Surd(new Fraction(1))]);
                 let denPart = this.calcSub(node.denominator) || new Poly([new Surd(new Fraction(1))]);
                 
-                // ★追加: エラーが連鎖してきたらそのまま返す
+                // エラーが連鎖してきたらそのまま返す
                 if (intPart.type === 'error') return intPart;
                 if (numPart.type === 'error') return numPart;
                 if (denPart.type === 'error') return denPart;
 
-                // ★追加: 分母が0になっていないかチェック！
-                // (Polyであり、単項式であり、係数の分子が0である場合)
+                // 分母が「カッコ付きの負の数」なら、計算せずに「分数の形」のまま返す！
+                // これを入れることで、5 / (-3) という状態をステップとして表示できるわ
+                if (denPart.type === 'structure' && denPart.symbolType === 'parens') {
+                    
+                    // 分子は計算済みの値を使うために、Polyならノードに戻す
+                    let newNumNodes = node.numerator; 
+                    if (numPart instanceof Poly && numPart.terms.length === 1 && numPart.terms[0].root === 1) {
+                         const val = numPart.terms[0].coeff.valueOf();
+                         newNumNodes = [{ type: 'number', value: val }];
+                    } else if (numPart.type === 'number') {
+                         newNumNodes = [{ type: 'number', value: numPart.value }];
+                    }
+
+                    return {
+                        type: 'structure', subType: 'fraction',
+                        integer: node.integer,
+                        numerator: newNumNodes,
+                        denominator: [denPart] // カッコ付きの分母をそのまま入れる！
+                    };
+                }
+
+                // 計算した結果、分母が「負の数」になった場合、
+                // 自動でマイナスを前に出さずに、「(-3)」のようなカッコ付きの分母として一度表示させる
+                
+                if (denPart instanceof Poly && denPart.terms.length === 1 && denPart.terms[0].root === 1) {
+                    const denVal = denPart.terms[0].coeff.valueOf();
+                    
+                    // 分母が負の数 (例: -3) で、かつ単純な数値の場合
+                    if (denVal < 0) {
+                        
+                        // 分子も単純な数値(Poly)になっているなら、ノード形式に変換する
+                        let newNumNodes = null;
+                        if (numPart instanceof Poly && numPart.terms.length === 1 && numPart.terms[0].root === 1) {
+                             const numVal = numPart.terms[0].coeff.valueOf();
+                             newNumNodes = [{ type: 'number', value: numVal }];
+                        }
+
+                        // 分子が単純化できていれば、この「一時停止措置」を発動！
+                        if (newNumNodes) {
+                            return {
+                                type: 'structure', 
+                                subType: 'fraction',
+                                integer: node.integer,
+                                numerator: newNumNodes, // 計算済みの分子 (10)
+                                denominator: [{         // カッコに入れた分母 (-3)
+                                    type: 'structure', 
+                                    subType: 'symbol', 
+                                    symbolType: 'parens', 
+                                    content: [{ type: 'number', value: denVal }] 
+                                }]
+                            };
+                        }
+                    }
+                }
+
+                // ===============================================
+                // 以下は既存ロジック（Polyチェックを強化して安全にしたわ）
+                // ===============================================
+
+                // 分母が0になっていないかチェック！
                 if (denPart instanceof Poly && denPart.terms.length === 1 && denPart.terms[0].coeff.n === 0) {
                     return { type: 'error', value: '分母に0は\n入りません' };
                 }
@@ -923,7 +1092,9 @@ const MathEngine = {
                 let isPureSign = node.integer && node.integer[0] && node.integer[0].isPureSign;
 
                 // 単純な整数分の整数なら「約分なし」で作成
-                if (numPart.terms.length === 1 && denPart.terms.length === 1) {
+                if (numPart instanceof Poly && denPart instanceof Poly && 
+                    numPart.terms.length === 1 && denPart.terms.length === 1) {
+                    
                     const tNum = numPart.terms[0];
                     const tDen = denPart.terms[0];
                     
@@ -937,7 +1108,7 @@ const MathEngine = {
                         const rawFrac = new Fraction(numVal, denVal, false);
                         let resultPoly = new Poly([new Surd(rawFrac)]);
                         
-                        if (intPart.terms.length > 0 && intPart.terms[0].coeff.n !== 0) {
+                        if (intPart instanceof Poly && intPart.terms.length > 0 && intPart.terms[0].coeff.n !== 0) {
                             if (isPureSign || intPart.terms[0].coeff.s < 0) return intPart.sub(resultPoly);
                             return intPart.add(resultPoly);
                         }
@@ -946,10 +1117,17 @@ const MathEngine = {
                 }
 
                 // 複雑な式（ルート入りなど）は通常の割り算（自動約分される）
-                let fracPart = numPart.div(denPart);
-                if (isPureSign) return new Poly([new Surd(new Fraction(0))]).sub(fracPart);
-                if (intPart.terms.length>0 && intPart.terms[0].coeff.s<0) return intPart.sub(fracPart);
-                return intPart.add(fracPart);
+                if (numPart instanceof Poly && denPart instanceof Poly) {
+                    let fracPart = numPart.div(denPart);
+                    
+                    if (intPart instanceof Poly) {
+                        if (isPureSign) return new Poly([new Surd(new Fraction(0))]).sub(fracPart);
+                        if (intPart.terms.length > 0 && intPart.terms[0].coeff.s < 0) return intPart.sub(fracPart);
+                        return intPart.add(fracPart);
+                    }
+                }
+
+                return null;
             }
             
             // ... (power, sqrt, symbol は変更なし ...
