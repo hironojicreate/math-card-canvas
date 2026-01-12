@@ -21,6 +21,9 @@ createDOM() {
     const el = document.createElement('div');
     el.classList.add('math-card');
 
+    // ★追加: どんなに見た目が変わっても、真実はここにある！
+        // HTMLの data-value 属性に、本来の値を書き込んでおくの。
+        el.dataset.value = this.value;
     // ★ハンドルフラグ(needsHandle)とその処理は全削除！
 
     // タイプ別のスタイルと構造（ここは以前のまま）
