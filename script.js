@@ -411,7 +411,7 @@ const CardMaker = {
         // B. 分数の分子にマイナスを含めるか？ (数学モード用)
         // 条件: 帯分数表示じゃない時だけ、分子に入れる
         const shouldMergeSignToNumerator = (
-            isMathMode &&
+            // isMathMode &&
             isNegative &&
             isPureNumber &&
             absCoeff.d !== 1 && 
@@ -1451,6 +1451,7 @@ const App = {
             }
             
             if (value.includes('式')) {
+                this.clearFocus();
                 this.spawnCard('root', 'Root', 50, 50);
             } else {
                 // その他の通常のカード生成
@@ -1565,12 +1566,68 @@ const App = {
         
         // ★修正版の魔法を呼び出す！
         this.tryAutoVisualReduction(newRootCard.element, result.nodes);
+
+        // 新しいカードが見えるようにスクロール！
+        // 少し遅らせることで、カードの描画が確実に終わってから動くようにするの（安定化のため）
+        setTimeout(() => {
+            this.autoScrollToVisibility(newRootCard.element);
+        }, 100);
         
         this.log("Step Generated! (Right Aligned) 🌰");
     },
 
 
-    // ★修正版: 0.5秒後に色をつける魔法（Poly対応版！）
+    // 指定したカードが見えるように、ふんわりスクロールする関数
+    autoScrollToVisibility(element) {
+        const field = document.getElementById(FIELD_ID);
+        if (!field || !element) return;
+
+        // 1. 位置関係を調べる
+        const fieldRect = field.getBoundingClientRect();
+        const cardRect = element.getBoundingClientRect();
+
+        // --- 縦方向 (Y) の調整 ---
+        // カードの下端が、フィールドの下端より下にあるか？（はみ出てる？）
+        // padding-bottom の分も考慮して、少し手前ではみ出し判定するの
+        const bottomOverflow = cardRect.bottom - (fieldRect.bottom - 20); // 20pxは余裕
+
+        if (bottomOverflow > 0) {
+            // はみ出ている分 + 50pxくらいの余白を足してスクロール
+            field.scrollBy({ 
+                top: bottomOverflow + 50, 
+                behavior: 'smooth' 
+            });
+        }
+        // もしカードが上にはみ出てる場合（逆スクロール）も一応ケア
+        else if (cardRect.top < fieldRect.top + 20) {
+             const topOverflow = cardRect.top - (fieldRect.top + 20);
+             field.scrollBy({ 
+                top: topOverflow - 50, // 上に戻る
+                behavior: 'smooth' 
+            });
+        }
+
+        // --- 横方向 (X) の調整 ---
+        // カードが右にはみ出てる？
+        const rightOverflow = cardRect.right - (fieldRect.right - 20);
+        if (rightOverflow > 0) {
+            field.scrollBy({ 
+                left: rightOverflow + 50, 
+                behavior: 'smooth' 
+            });
+        }
+        // カードが左にはみ出てる？
+        else if (cardRect.left < fieldRect.left + 20) {
+            const leftOverflow = cardRect.left - (fieldRect.left + 20);
+            field.scrollBy({ 
+                left: leftOverflow - 50, 
+                behavior: 'smooth' 
+            });
+        }
+    },
+
+
+    // 0.5秒後に色をつける魔法（Poly対応版！）
     tryAutoVisualReduction(cardElement, nodes) {
         if (nodes.length !== 1) return;
 
@@ -2058,22 +2115,38 @@ if (container.classList.contains('container-fraction')) {
         // 4. 情報ウィンドウのON/OFF
         if (toggleInfo && infoWindow) {
             
+            // ハンドル要素も取得する
+            const infoHandle = document.getElementById('info-resize-handle');
+
+            // 表示・非表示をまとめて切り替える関数
+            const updateInfoVisibility = () => {
+                const isVisible = this.state.configShowInfo;
+                
+                // スイッチの見た目同期
+                toggleInfo.checked = isVisible;
+                
+                // ウィンドウとハンドルの表示切替
+                if (isVisible) {
+                    infoWindow.style.display = 'flex';
+                    if (infoHandle) infoHandle.style.display = 'flex'; // ハンドルも復活！
+                } else {
+                    infoWindow.style.display = 'none';
+                    if (infoHandle) infoHandle.style.display = 'none'; // ハンドルも隠す！
+                }
+            };
+
             // 初期化（ロードした設定を反映）
-            // スイッチの状態を合わせる
-            toggleInfo.checked = this.state.configShowInfo;
-            // 実際のウィンドウの表示/非表示を合わせる
-            infoWindow.style.display = this.state.configShowInfo ? 'flex' : 'none';
+            updateInfoVisibility();
 
             toggleInfo.onchange = () => {
                 // stateを更新
                 this.state.configShowInfo = toggleInfo.checked;
                 
                 // 見た目を更新
+                updateInfoVisibility();
+                
                 if (this.state.configShowInfo) {
-                    infoWindow.style.display = 'flex';
                     this.log("Info Window: ON");
-                } else {
-                    infoWindow.style.display = 'none';
                 }
                 
                 // 設定を保存！
@@ -2157,20 +2230,19 @@ if (container.classList.contains('container-fraction')) {
 
     // script.js の setupResizer メソッド（完全書き換え版）
 
+
+    // ====== setupResizer の完全版（縦も横も対応！） ======
     setupResizer() {
-        // 現在リサイズ中の情報を保持する変数（これが司令塔！）
         let resizingState = {
             isResizing: false,
-            targetId: null,   // 'info-window' or 'wait-area'
-            direction: null,  // 'top-down' or 'bottom-up'
+            targetId: null,   
+            direction: null,  // 'top-down' | 'bottom-up' | 'width-left'
             handle: null
         };
 
-        // --- A. リサイズ開始（ハンドルを触った時） ---
         const startResize = (e, targetId, direction, handleElement) => {
-            // スクロールなどの標準動作を防ぐ（タッチの場合）
             if (e.cancelable) e.preventDefault();
-            e.stopPropagation(); // 他の要素にイベントを伝えない
+            e.stopPropagation();
 
             resizingState = {
                 isResizing: true,
@@ -2180,66 +2252,63 @@ if (container.classList.contains('container-fraction')) {
             };
 
             handleElement.classList.add('active');
-            document.body.style.cursor = 'row-resize';
-            document.body.style.userSelect = 'none'; // 文字選択防止
+            
+            // カーソル変更
+            if (direction === 'width-left') {
+                document.body.style.cursor = 'col-resize';
+            } else {
+                document.body.style.cursor = 'row-resize';
+            }
+            document.body.style.userSelect = 'none';
         };
 
-        // 各ハンドルにリスナーを設定
         const setupHandle = (handleId, targetId, direction) => {
             const handle = document.getElementById(handleId);
             if (!handle) return;
-
-            // マウス
             handle.addEventListener('mousedown', (e) => startResize(e, targetId, direction, handle));
-            
-            // タッチ（passive: false が超重要！）
             handle.addEventListener('touchstart', (e) => startResize(e, targetId, direction, handle), { passive: false });
         };
 
-        // 1. 待機エリア用ハンドル（下）の設定
+        // 1. 待機エリア（下）
         setupHandle('resize-handle', 'wait-area', 'bottom-up');
-
-        // 2. 情報エリア用ハンドル（上）の設定
+        // 2. 情報エリア（上）
         setupHandle('info-resize-handle', 'info-window', 'top-down');
+        // 3. ★追加：サイドバー（横）
+        setupHandle('sidebar-resize-handle', 'sidebar', 'width-left');
 
-
-        // --- B. リサイズ中（画面全体で監視） ---
         const onMove = (e) => {
             if (!resizingState.isResizing) return;
-
-            // ドラッグ中は絶対にスクロールさせない
             if (e.cancelable) e.preventDefault();
 
-            // 座標取得（マウス/タッチ共通化）
-            let clientY;
-            if (e.type.includes('touch')) {
-                clientY = e.touches[0].clientY;
-            } else {
-                clientY = e.clientY;
-            }
+            // 座標取得
+            const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
 
             const target = document.getElementById(resizingState.targetId);
             if (!target) return;
 
-            // 高さ計算ロジック
+            // --- 縦リサイズ (既存ロジック) ---
             if (resizingState.direction === 'bottom-up') {
-                // 下の待機エリア： (ウィンドウの高さ - 指の位置)
                 const newHeight = window.innerHeight - clientY;
-                // 制限: 最小100px 〜 最大画面の60%
-                if (newHeight > 100 && newHeight < window.innerHeight * 0.6) {
-                    target.style.height = `${newHeight}px`;
-                }
-            } else {
-                // 上の情報エリア： (指の位置 そのまま)
+                if (newHeight > 100 && newHeight < window.innerHeight * 0.6) target.style.height = `${newHeight}px`;
+            } 
+            else if (resizingState.direction === 'top-down') {
                 const newHeight = clientY;
-                // 制限: 最小40px 〜 最大300px
-                if (newHeight > 40 && newHeight < 300) {
-                    target.style.height = `${newHeight}px`;
+                if (newHeight > 40 && newHeight < 300) target.style.height = `${newHeight}px`;
+            }
+            // --- ★追加：横リサイズ (サイドバー) ---
+            else if (resizingState.direction === 'width-left') {
+                // サイドバーは右にあるので、幅 = 画面幅 - マウスX座標
+                const newWidth = window.innerWidth - clientX;
+                
+                // 制限：最小200px 〜 最大画面の50%
+                if (newWidth > 200 && newWidth < window.innerWidth * 0.5) {
+                    target.style.width = `${newWidth}px`;
+                    target.style.flex = 'none'; // Flex自動計算を切って固定幅にする
                 }
             }
         };
 
-        // --- C. リサイズ終了 ---
         const onEnd = () => {
             if (resizingState.isResizing) {
                 if (resizingState.handle) resizingState.handle.classList.remove('active');
@@ -2250,10 +2319,8 @@ if (container.classList.contains('container-fraction')) {
             }
         };
 
-        // 監視役は window に一人だけ配置！（これで競合しない）
         window.addEventListener('mousemove', onMove, { passive: false });
         window.addEventListener('touchmove', onMove, { passive: false });
-        
         window.addEventListener('mouseup', onEnd);
         window.addEventListener('touchend', onEnd);
         window.addEventListener('touchcancel', onEnd);

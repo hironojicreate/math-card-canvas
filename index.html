@@ -4,13 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Math Card Canvas - 数式の箱庭</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <div class="app-container">
         
-
         <div class="main-area">
             <div id="info-window" class="info-window">
                 <div id="log-content" class="log-content">Ready.</div>
@@ -20,7 +22,6 @@
 
             <div id="calc-field" class="field-area">
                 <div class="area-label">計算フィールド (Canvas)</div>
-                
                 <div id="usage-guide" class="usage-guide">
                     <h3>使い方</h3>
                     <ol>
@@ -29,120 +30,129 @@
                         <li>［＝］ボタンを押して、計算をします。</li>
                     </ol>
                     <p class="note">※数字や記号は、自由に動かすことができます。色々試してみましょう。</p>
-                    <p class="note">※このヒントは、設定ボタン［⚙：歯車マーク］で消すことができます。</p>
-                    <p class="note">※数学モードは調整中のため、不安定です。もう少しお時間ください。</p>
+                    <p class="note">※このヒントは、設定ボタン［歯車マーク］で消すことができます。</p>
                 </div>
-                </div>
+            </div>
 
             <div id="resize-handle" class="resize-handle"></div>
 
             <div id="wait-area" class="wait-area">
                 <div class="area-label">待機エリア (Waiting Room)</div>
-                
-
                 <div class="wait-tools">
                     <button id="btn-sort-wait" class="btn-func btn-small">整列</button>
-                    
                     <button id="btn-clear-wait" class="btn-func btn-red btn-small">ゴミ箱</button>
-
                     <div id="wait-clear-confirm" class="confirm-box hidden">
                         <button id="btn-clear-yes" class="btn-func btn-red btn-small">実行</button>
                         <button id="btn-clear-no" class="btn-func btn-small">×</button>
                     </div>
                 </div>
-
             </div>
         </div>
 
-        <div class="sidebar">
-            <div class="keypad-grid">
+        <div id="sidebar-resize-handle" class="resize-handle-vertical"></div>
 
-                <div class="grid-head">システム</div>
-                <button id="btn-copy" class="btn-func">Copy</button>
-                <button id="btn-clear" class="btn-func btn-red" data-key="Escape">Clear</button>
-                <button id="btn-to-wait" class="btn-func">そうじ</button>
-                <button id="btn-settings" class="btn-func">⚙</button>
-
-                <button id="btn-toggle-display" class="btn-func span-2-col">◉分数/○小数/<br>○あまり</button>
-                <button id="btn-toggle-fraction-mode" class="btn-func btn-multiline">◉仮分数<br>○帯分数</button>
-                <button id="btn-toggle-app-mode" class="btn-func btn-multiline">◉算数<br>○数学</button>
-
-                <div class="grid-head">変数・定数</div>
-                <button class="btn-create btn-var" data-type="variable">x</button>
-                <button class="btn-create btn-var" data-type="variable">y</button>
-                <button class="btn-create btn-var" data-type="variable">z</button>
-                <button class="btn-create btn-var btn-const btn-math-mode" data-type="variable">π</button>
-                
-                <button class="btn-create btn-var" data-type="variable">a</button>
-                <button class="btn-create btn-var" data-type="variable">b</button>
-                <button class="btn-create btn-var" data-type="variable">c</button>
-                <button class="btn-create btn-var btn-const btn-math-mode" data-type="variable">i</button>
-
-                <div class="grid-head">はこ（コンテナ）</div>
-
-                <button class="btn-create btn-struct" data-type="structure" data-value="分数">
-                    <div class="btn-visual-fraction">
-                        <span>□</span>
-                        <span class="btn-frac-line"></span>
-                        <span>□</span>
-                    </div>
-                </button>
-
-                <button class="btn-create btn-struct" data-type="structure" data-value="( )">( )</button>
-
-                <div class="empty-cell btn-math-mode"></div>
-                <div class="empty-cell btn-math-mode"></div>
-
-                <button class="btn-create btn-struct btn-math-mode" data-type="operator" data-value="√">√</button>
-
-                <button class="btn-create btn-struct btn-math-mode" data-type="structure" data-value="power">
-                    <div class="btn-visual-power">
-                        <span class="power-base">2</span>
-                        <span class="power-sup">○乗</span>
-                    </div>
-                </button>
-
-                <button class="btn-create btn-struct btn-math-mode" data-type="structure" data-value="|x|">|x|</button>
-
-                <div class="empty-cell btn-math-mode"></div>
-
-
-                <div class="grid-head">基本キー</div>
-                
-                <button class="btn-func" data-type="delete" data-key="Backspace">⌫</button>
-                <button class="btn-create btn-root span-2-col btn-wide-text" data-type="structure">式(始めに)</button>
-                <button class="btn-create btn-equal" data-type="operator" data-key="=">=</button>
-
-                <button class="btn-create" data-type="number" data-key="7">7</button>
-                <button class="btn-create" data-type="number" data-key="8">8</button>
-                <button class="btn-create" data-type="number" data-key="9">9</button>
-                <button class="btn-create" data-type="operator" data-key="/">÷</button>
-
-                <button class="btn-create" data-type="number" data-key="4">4</button>
-                <button class="btn-create" data-type="number" data-key="5">5</button>
-                <button class="btn-create" data-type="number" data-key="6">6</button>
-                <button class="btn-create" data-type="operator" data-key="*">×</button>
-
-                <button class="btn-create" data-type="number" data-key="1">1</button>
-                <button class="btn-create" data-type="number" data-key="2">2</button>
-                <button class="btn-create" data-type="number" data-key="3">3</button>
-                <button class="btn-create" data-type="operator" data-key="-">-</button>
-
-                <button class="btn-create btn-math-mode" data-type="sign" data-key="n">負の数</button>
-                <button class="btn-create" data-type="number" data-key="0">0</button>
-                <button class="btn-create" data-type="number" data-key=".">.</button>
-                <button class="btn-create" data-type="operator" data-key="+">+</button>
-
-                <div class="empty-cell"></div>
-                <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowUp">↑</button>
-                <div class="empty-cell"></div>
-                
-                <button class="btn-nav btn-enter span-2-row" data-type="action" data-key="Enter">決定</button>
-
-                <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowLeft">←</button>
-                <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowDown">↓</button>
-                <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowRight">→</button>
+        <div id="sidebar" class="sidebar">
+            
+            <div class="sidebar-header">
+                Math Card Canvas - 数式の箱庭
             </div>
+
+            <div class="sidebar-scroll-area">
+                <div class="keypad-grid">
+
+                    <div class="grid-head">システム</div>
+                    <button id="btn-copy" class="btn-func">コピー</button>
+                    <button id="btn-clear" class="btn-func btn-red" data-key="Escape">けす</button>
+                    <button id="btn-to-wait" class="btn-func">そうじ</button>
+                    <button id="btn-settings" class="btn-func">⚙</button>
+    
+                    <button id="btn-toggle-display" class="btn-func span-2-col">◉分数/○小数/<br>○あまり</button>
+                    <button id="btn-toggle-fraction-mode" class="btn-func btn-multiline">◉仮分数<br>○帯分数</button>
+                    <button id="btn-toggle-app-mode" class="btn-func btn-multiline">◉算数<br>○数学</button>
+    
+                    <div class="grid-head">変数・定数</div>
+                    <button class="btn-create btn-var" data-type="variable">x</button>
+                    <button class="btn-create btn-var" data-type="variable">y</button>
+                    <button class="btn-create btn-var" data-type="variable">z</button>
+                    <button class="btn-create btn-var btn-const btn-math-mode" data-type="variable">π</button>
+                    
+                    <button class="btn-create btn-var" data-type="variable">a</button>
+                    <button class="btn-create btn-var" data-type="variable">b</button>
+                    <button class="btn-create btn-var" data-type="variable">c</button>
+                    <button class="btn-create btn-var btn-const btn-math-mode" data-type="variable">i</button>
+    
+                    <div class="grid-head">はこ（コンテナ）</div>
+    
+                    <button class="btn-create btn-struct" data-type="structure" data-value="分数">
+                        <div class="btn-visual-fraction">
+                            <span>□</span>
+                            <span class="btn-frac-line"></span>
+                            <span>□</span>
+                        </div>
+                    </button>
+    
+                    <button class="btn-create btn-struct" data-type="structure" data-value="( )">( )</button>
+    
+                    <div class="empty-cell btn-math-mode"></div>
+                    <div class="empty-cell btn-math-mode"></div>
+    
+                    <button class="btn-create btn-struct btn-math-mode" data-type="operator" data-value="√">√</button>
+    
+                    <button class="btn-create btn-struct btn-math-mode" data-type="structure" data-value="power">
+                        <div class="btn-visual-power">
+                            <span class="power-base">2</span>
+                            <span class="power-sup">○乗</span>
+                        </div>
+                    </button>
+    
+                    <button class="btn-create btn-struct btn-math-mode" data-type="structure" data-value="|x|">|x|</button>
+    
+                    <div class="empty-cell btn-math-mode"></div>
+    
+    
+                    <div class="grid-head">基本キー</div>
+                    
+                    <button class="btn-func" data-type="delete" data-key="Backspace">⌫</button>
+                    <button class="btn-create btn-root span-2-col btn-wide-text" data-type="structure">式(始めに)</button>
+                    <button class="btn-create btn-equal" data-type="operator" data-key="=">=</button>
+    
+                    <button class="btn-create" data-type="number" data-key="7">7</button>
+                    <button class="btn-create" data-type="number" data-key="8">8</button>
+                    <button class="btn-create" data-type="number" data-key="9">9</button>
+                    <button class="btn-create" data-type="operator" data-key="/">÷</button>
+    
+                    <button class="btn-create" data-type="number" data-key="4">4</button>
+                    <button class="btn-create" data-type="number" data-key="5">5</button>
+                    <button class="btn-create" data-type="number" data-key="6">6</button>
+                    <button class="btn-create" data-type="operator" data-key="*">×</button>
+    
+                    <button class="btn-create" data-type="number" data-key="1">1</button>
+                    <button class="btn-create" data-type="number" data-key="2">2</button>
+                    <button class="btn-create" data-type="number" data-key="3">3</button>
+                    <button class="btn-create" data-type="operator" data-key="-">-</button>
+    
+                    <button class="btn-create btn-math-mode" data-type="sign" data-key="n">負の数</button>
+                    <button class="btn-create" data-type="number" data-key="0">0</button>
+                    <button class="btn-create" data-type="number" data-key=".">.</button>
+                    <button class="btn-create" data-type="operator" data-key="+">+</button>
+    
+                    <div class="empty-cell"></div>
+                    <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowUp">↑</button>
+                    <div class="empty-cell"></div>
+                    
+                    <button class="btn-nav btn-enter span-2-row" data-type="action" data-key="Enter">決定</button>
+    
+                    <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowLeft">←</button>
+                    <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowDown">↓</button>
+                    <button class="btn-nav btn-arrow" data-type="nav" data-key="ArrowRight">→</button>
+
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                ©2026 Kitaha R. Ver.1.3
+            </div>
+
         </div>
     </div>
 

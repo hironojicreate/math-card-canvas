@@ -1288,7 +1288,7 @@ const MathEngine = {
                 // 公約数を計算
                 const valN = nums[i].value;
                 const valD = dens[j].value;
-                const commonDivisor = this.gcd(valN, valD);
+                const commonDivisor = this.gcd(Math.abs(valN), Math.abs(valD));
                 
                 if (commonDivisor > 1) {
                     // ★ペア発見！即リターンせずに、記録して次へ進む！

@@ -66,31 +66,44 @@ body {
     pointer-events: none; /* マウス操作の邪魔をしない */
 }
 
-/* リサイザー（境界線ハンドル） */
+/* ====== リサイズハンドル（水平・待機エリア用） ====== */
+/* 既存の .resize-handle をこれに置き換えるの！ */
 .resize-handle {
-    height: 8px; /* 掴みやすい太さ */
-    background-color: #dcdde1;
-    cursor: row-resize; /* カーソルを上下矢印に */
-    border-top: 1px solid #ccc;
-    border-bottom: 1px solid #ccc;
+    height: 10px; /* 少し太くして掴みやすく */
+    background-color: #dfe6e9;
+    cursor: row-resize; /* 上下矢印 */
+    
+    /* 立体感を出すボーダー */
+    border-top: 1px solid #b2bec3;
+    border-bottom: 1px solid #b2bec3;
+    
+    /* 飾りを中央に配置するためのFlex設定 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    /* ホバー時などのアニメーション */
     transition: background-color 0.2s;
-    z-index: 10; /* 手前に表示 */
-    flex-shrink: 0; /* 潰れないように */
-    position: relative;
-    touch-action: none;
-}
-
-.resize-handle::after {
-    content: "";
-    position: absolute;
-    left: 0; right: 0;
-    top: -10px; bottom: -10px; /* 上下に10pxずつ判定を広げる */
     z-index: 10;
 }
 
+/* ハンドルの中に「＝」みたいな飾りをつける */
+.resize-handle::after {
+    content: "";
+    width: 20px;          /* 横幅広め */
+    height: 1px;          /* 高さは細く */
+    border-top: 2px solid #b2bec3;    /* 上の線 */
+    border-bottom: 2px solid #b2bec3; /* 下の線 */
+    display: block;
+}
+
+/* 掴んだときの色変化 */
 .resize-handle:hover,
 .resize-handle.active {
-    background-color: #0984e3; /* ホバー時・ドラッグ時は青く */
+    background-color: #74b9ff; /* 明るい青 */
+}
+.resize-handle.active::after {
+    border-color: #fff; /* 掴んでる時は線を白く */
 }
 
 /* 待機エリア（固定サイズ・自由配置） */
@@ -248,7 +261,6 @@ button:hover { background-color: #f0f0f0; }
     font-weight: normal;        /* 太字だと潰れることがあるので普通に */
 }
 
-/* ====== style.css の末尾に追加・修正 ====== */
 
 /* 1. 分数ボタンのビジュアル（巨大化） */
 .btn-visual-fraction {
@@ -257,7 +269,7 @@ button:hover { background-color: #f0f0f0; }
     align-items: center;
     justify-content: center;
     
-    font-family: "Times New Roman", serif; 
+    font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", sans-serif !important;
     font-size: 24px;   /* ★文字サイズを大きく！(14px→24px) */
     line-height: 0.8;  /* ★行間を詰めて、ボタン(50px)に収める */
 }
@@ -271,7 +283,7 @@ button:hover { background-color: #f0f0f0; }
 
 /* 2. べき乗ボタンのビジュアル（「2」を巨大化、他は小さく） */
 .btn-visual-power {
-    font-family: "Times New Roman", serif;
+    font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", sans-serif !important;
     display: inline-flex;
     align-items: flex-start; /* 上揃え（指数っぽく） */
     line-height: 1;
@@ -322,10 +334,12 @@ button:hover { background-color: #f0f0f0; }
     color: #4a90e2; 
     background-color: #ffffff; 
 
-    /* ★教科書体化 & サイズアップ */
-    font-family: "Times New Roman", "YuMincho", "Hiragino Mincho ProN", serif;
-    font-size: 40px;     /* 文字を大きく！ */
-    font-weight: normal; /* 太字をやめて、教科書のようなスッキリした太さに */
+    /* ★変更：丸ゴシック系に変更 */
+    /* M PLUS Rounded 1c を最優先、なければ端末の丸文字や教科書体を探す */
+    font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "UD Digi Kyokasho N-R", "BIZ UDPGothic", sans-serif;
+    
+    font-size: 36px;     /* 丸文字は少し大きく見えるので、40pxから微調整（お好みで！） */
+    font-weight: 500;    /* 400だと細すぎ、500だと程よい視認性になるはずよ */
     
     /* 位置調整（フォントが変わると少しズレて見えることがあるので） */
     padding-bottom: 2px;
@@ -388,7 +402,8 @@ button:hover { background-color: #f0f0f0; }
     height: 45px !important;
     
     /* ★教科書体化 */
-    font-family: "Times New Roman", "YuMincho", "Hiragino Mincho ProN", serif;
+   
+    font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", sans-serif !important;
     font-size: 24px;     /* 記号は少し控えめなサイズが上品 */
     font-weight: bold;
     
@@ -893,7 +908,7 @@ button:hover { background-color: #f0f0f0; }
     z-index: 100;
 }
 
-/* ★修正ポイント：背景色は「式プレート以外」の時だけ変える */
+/*背景色は「式プレート以外」の時だけ変える */
 .math-card.hover-active:not(.container-root) {
     background-color: #e6f7ff !important;
 }
@@ -1129,7 +1144,7 @@ button:hover { background-color: #f0f0f0; }
     margin-left: 4px; 
 }
 
-/* ====== 追加：指数スロット内のドロップゾーン調整 ====== */
+/* ====== 指数スロット内のドロップゾーン調整 ====== */
 .card-slot.exponent-slot .drop-zone::after {
     /* 通常90pxある緑の棒を、スロットに合わせて短くする */
     height: 50px !important; 
@@ -1360,7 +1375,7 @@ input:checked + .slider:before {
 }
 
 
-/* ====== 追加: モーダル内のヘルプデザイン ====== */
+/* ====== モーダル内のヘルプデザイン ====== */
 .modal-divider {
     border: 0;
     border-top: 1px solid #ddd;
@@ -1604,4 +1619,97 @@ body.simple-mode button[data-key="0"] {
 body.hide-usage .usage-guide {
     opacity: 0;
     visibility: hidden;
+}
+
+/* =========================================
+   Phase B: サイドバー大改造（3分割＆リサイズ）
+   ========================================= */
+
+/* 1. サイドバー本体（Flexboxで縦並びにする） */
+.sidebar {
+    /* 以前の overflow-y: auto; を上書きして消す */
+    overflow: hidden !important; 
+    padding: 0 !important; /* パディングは中の要素に任せる */
+    
+    /* 縦並びレイアウト */
+    display: flex !important;
+    flex-direction: column;
+    
+    /* 初期幅の設定（リサイズで変わるけど一応） */
+    width: 280px; 
+    min-width: 200px;
+    flex: none; /* リサイズ可能にするため、flex自動伸縮を切る */
+}
+
+/* 2. アプリタイトル（固定ヘッダー） */
+.sidebar-header {
+    background-color: #e9ecef; /* 少し濃いグレー */
+    padding: 12px;
+    text-align: center;
+    font-weight: bold;
+    color: #555;
+    border-bottom: 1px solid #dcdde1;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: 1px; /* 文字間を少し広げておしゃれに */
+    flex-shrink: 0;      /* 縮まないように固定 */
+    font-size: 14px;
+}
+
+/* 3. ボタンエリア（ここだけスクロールさせる！） */
+.sidebar-scroll-area {
+    flex: 1; /* 余った高さを全部使う */
+    overflow-y: auto; /* 中身が溢れたらここだけスクロール */
+    padding: 15px;    /* 元の.sidebarにあったパディングをここに移動 */
+}
+
+/* 4. コピーライト（固定フッター） */
+.sidebar-footer {
+    background-color: #f1f2f6;
+    padding: 8px;
+    text-align: center;
+    font-size: 10px;
+    color: #aaa;
+    border-top: 1px solid #e0e0e0;
+    flex-shrink: 0; /* 縮まないように固定 */
+}
+
+/* 5. 縦長リサイズハンドル（太めの棒） */
+.resize-handle-vertical {
+    width: 10px; /* 指で掴みやすい太さ */
+    background-color: #dfe6e9;
+    cursor: col-resize; /* カーソルを左右矢印に */
+    
+    /* 立体感を出すボーダー */
+    border-left: 1px solid #b2bec3;
+    border-right: 1px solid #b2bec3;
+    
+    z-index: 20; /* サイドバーより手前に */
+    flex-shrink: 0; /* 潰れないように */
+    
+    /* ホバー時などのアニメーション */
+    transition: background-color 0.2s;
+    
+    /* アイコン装飾（三本線） */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ハンドルの中に「||」みたいな飾りをつける */
+.resize-handle-vertical::after {
+    content: "";
+    width: 1px;
+    height: 20px;
+    border-left: 2px solid #b2bec3;
+    border-right: 2px solid #b2bec3;
+    display: block;
+}
+
+/* 掴んだときの色変化 */
+.resize-handle-vertical:hover,
+.resize-handle-vertical.active {
+    background-color: #74b9ff; /* 明るい青 */
+}
+.resize-handle-vertical.active::after {
+    border-color: #fff; /* 掴んでる時は線を白く */
 }
